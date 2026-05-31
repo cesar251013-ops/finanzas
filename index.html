@@ -1777,19 +1777,11 @@ document.addEventListener('click', e => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GOOGLE SHEETS SYNC — via allorigins.win proxy (solves CORS)
+// GOOGLE SHEETS SYNC — fetch directo (funciona desde https://)
 // ═══════════════════════════════════════════════════════════════════════════
 let SHEETS_URL  = localStorage.getItem('finanzas_sheets_url') || '';
 let syncTimeout = null;
 let isSyncing   = false;
-
-// allorigins.win is a free open CORS proxy — it forwards your request
-// to Apps Script and returns the response with CORS headers added.
-const PROXY = 'https://api.allorigins.win/raw?url=';
-
-function proxyUrl(url) {
-  return PROXY + encodeURIComponent(url);
-}
 
 function setSyncStatus(status) {
   const dot   = $('sync-dot');
@@ -1823,68 +1815,62 @@ function saveSheetsConfig() {
   else    setSyncStatus('offline');
 }
 
-// ── Core fetch via proxy ─────────────────────────────────────────────────────
-async function sheetsGet(action) {
-  const url = SHEETS_URL + '?action=' + action;
-  const res  = await fetch(proxyUrl(url), { cache: 'no-store' });
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
-}
-
-async function sheetsPost(payload) {
-  // POST via proxy — allorigins supports it
-  const res = await fetch(proxyUrl(SHEETS_URL), {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
+// ── Fetch helpers ────────────────────────────────────────────────────────────
+async function sheetsGet(url, action) {
+  const res = await fetch(`${url}?action=${action}`, {
+    method: 'GET',
+    redirect: 'follow',
   });
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Respuesta inválida del servidor'); }
 }
 
-// ── Test connection ──────────────────────────────────────────────────────────
+async function sheetsPost(url, payload) {
+  const res = await fetch(url, {
+    method:   'POST',
+    redirect: 'follow',
+    body:     JSON.stringify(payload),
+  });
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Respuesta inválida del servidor'); }
+}
+
+// ── Test ─────────────────────────────────────────────────────────────────────
 async function testSheetsConnection() {
   const url = $('sheets-url-input').value.trim();
   const el  = $('sheets-test-result');
   if(!url) { el.innerHTML = '<span style="color:var(--red)">⚠️ Ingresa la URL primero</span>'; return; }
   el.innerHTML = '<span style="color:var(--gold)">⏳ Probando…</span>';
-
-  // Temporarily use the typed URL for the test
-  const savedURL = SHEETS_URL;
-  SHEETS_URL = url;
   try {
-    const data = await sheetsGet('ping');
+    const data = await sheetsGet(url, 'ping');
     if(data.ok) {
       el.innerHTML = '<span style="color:var(--green)">✅ Conexión exitosa — puedes guardar</span>';
     } else {
-      el.innerHTML = `<span style="color:var(--red)">❌ El script respondió con error: ${data.error||'desconocido'}</span>`;
+      el.innerHTML = `<span style="color:var(--red)">❌ Error: ${data.error||'desconocido'}</span>`;
     }
   } catch(e) {
-    el.innerHTML = `<span style="color:var(--red)">❌ ${e.message} — verifica que la URL termine en /exec y que el script esté publicado</span>`;
-  } finally {
-    SHEETS_URL = savedURL;
+    el.innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
   }
 }
 
-// ── LOAD ─────────────────────────────────────────────────────────────────────
+// ── Load ─────────────────────────────────────────────────────────────────────
 async function loadFromSheets() {
   if(!SHEETS_URL) { setSyncStatus('offline'); return; }
   setSyncStatus('loading');
   try {
-    const data = await sheetsGet('load');
+    const data = await sheetsGet(SHEETS_URL, 'load');
     if(!data.ok) { setSyncStatus('error'); return; }
-
     const r = data.data;
     let changed = false;
-
-    if(r.transactions && r.transactions.length)  { state.transactions = r.transactions;       changed = true; }
-    if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto = r.presupuesto;    changed = true; }
-    if(r.cuentas      && r.cuentas.length)        { state.cuentas = r.cuentas;                changed = true; }
-    if(r.cajitas      && r.cajitas.length)         { state.cajitas = r.cajitas;               changed = true; }
-    if(r.deudas)                                  { state.deudas = r.deudas;                  changed = true; }
-    if(r.ingresoEsperado)                         { state.ingresoEsperado = r.ingresoEsperado;changed = true; }
-    if(r.saldoInicialMes)                         { state.saldoInicialMes = r.saldoInicialMes;changed = true; }
-
+    if(r.transactions && r.transactions.length)       { state.transactions    = r.transactions;    changed = true; }
+    if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     changed = true; }
+    if(r.cuentas      && r.cuentas.length)            { state.cuentas         = r.cuentas;         changed = true; }
+    if(r.cajitas      && r.cajitas.length)            { state.cajitas         = r.cajitas;         changed = true; }
+    if(r.deudas)                                      { state.deudas          = r.deudas;          changed = true; }
+    if(r.ingresoEsperado)                             { state.ingresoEsperado = r.ingresoEsperado; changed = true; }
+    if(r.saldoInicialMes)                             { state.saldoInicialMes = r.saldoInicialMes; changed = true; }
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
       nextId = Math.max(nextId, maxId + 1);
@@ -1897,13 +1883,13 @@ async function loadFromSheets() {
   }
 }
 
-// ── SAVE ─────────────────────────────────────────────────────────────────────
+// ── Save ─────────────────────────────────────────────────────────────────────
 async function pushToSheets() {
   if(!SHEETS_URL || isSyncing) return;
   isSyncing = true;
   setSyncStatus('saving');
   try {
-    const data = await sheetsPost({
+    const data = await sheetsPost(SHEETS_URL, {
       action: 'save',
       state: {
         transactions:    state.transactions,
@@ -1924,13 +1910,14 @@ async function pushToSheets() {
   }
 }
 
-// ── Auto-save (3s debounce) ───────────────────────────────────────────────────
+// ── Auto-save debounce ───────────────────────────────────────────────────────
 function scheduleSync() {
   if(!SHEETS_URL) return;
   clearTimeout(syncTimeout);
   setSyncStatus('saving');
   syncTimeout = setTimeout(pushToSheets, 3000);
 }
+
 // ── INIT ──
 renderAll();
 if(SHEETS_URL) { loadFromSheets(); } else { setSyncStatus('offline'); }
