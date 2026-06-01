@@ -1889,12 +1889,23 @@ async function pushToSheets() {
   isSyncing = true;
   setSyncStatus('saving');
   try {
+    // Sanitize: replace null with empty string to avoid JSON parse errors in Apps Script
+    const sanitizeTx = tx => ({
+      ...tx,
+      presCat: tx.presCat ?? '',
+      note:    tx.note    ?? '',
+      date:    tx.date    || '',
+    });
     const payload = {
-      transactions:    state.transactions,
+      transactions:    state.transactions.map(sanitizeTx),
       presupuesto:     state.presupuesto,
       cuentas:         state.cuentas,
       cajitas:         state.cajitas,
-      deudas:          state.deudas,
+      deudas:          (state.deudas||[]).map(d => ({
+                         ...d,
+                         vence: d.vence ?? '',
+                         nota:  d.nota  ?? '',
+                       })),
       ingresoEsperado: state.ingresoEsperado,
       saldoInicialMes: state.saldoInicialMes,
       saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
