@@ -1777,7 +1777,7 @@ document.addEventListener('click', e => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GOOGLE SHEETS SYNC — fetch directo (funciona desde https://)
+// GOOGLE SHEETS SYNC — todo via GET para evitar problema de redirección POST
 // ═══════════════════════════════════════════════════════════════════════════
 let SHEETS_URL  = localStorage.getItem('finanzas_sheets_url') || '';
 let syncTimeout = null;
@@ -1815,26 +1815,14 @@ function saveSheetsConfig() {
   else    setSyncStatus('offline');
 }
 
-// ── Fetch helpers ────────────────────────────────────────────────────────────
-async function sheetsGet(url, action) {
-  const res = await fetch(`${url}?action=${action}`, {
-    method: 'GET',
-    redirect: 'follow',
-  });
+// ── Core fetch GET ───────────────────────────────────────────────────────────
+async function sheetsGet(action, extraParams) {
+  let url = SHEETS_URL + '?action=' + action;
+  if(extraParams) url += '&' + extraParams;
+  const res  = await fetch(url, { redirect: 'follow', cache: 'no-store' });
   const text = await res.text();
   try { return JSON.parse(text); }
-  catch(e) { throw new Error('Respuesta inválida del servidor'); }
-}
-
-async function sheetsPost(url, payload) {
-  const res = await fetch(url, {
-    method:   'POST',
-    redirect: 'follow',
-    body:     JSON.stringify(payload),
-  });
-  const text = await res.text();
-  try { return JSON.parse(text); }
-  catch(e) { throw new Error('Respuesta inválida del servidor'); }
+  catch(e) { throw new Error('Respuesta inválida: ' + text.slice(0,100)); }
 }
 
 // ── Test ─────────────────────────────────────────────────────────────────────
@@ -1843,15 +1831,17 @@ async function testSheetsConnection() {
   const el  = $('sheets-test-result');
   if(!url) { el.innerHTML = '<span style="color:var(--red)">⚠️ Ingresa la URL primero</span>'; return; }
   el.innerHTML = '<span style="color:var(--gold)">⏳ Probando…</span>';
+  const savedURL = SHEETS_URL;
+  SHEETS_URL = url;
   try {
-    const data = await sheetsGet(url, 'ping');
-    if(data.ok) {
-      el.innerHTML = '<span style="color:var(--green)">✅ Conexión exitosa — puedes guardar</span>';
-    } else {
-      el.innerHTML = `<span style="color:var(--red)">❌ Error: ${data.error||'desconocido'}</span>`;
-    }
+    const data = await sheetsGet('ping');
+    el.innerHTML = data.ok
+      ? '<span style="color:var(--green)">✅ Conexión exitosa — puedes guardar</span>'
+      : `<span style="color:var(--red)">❌ Error: ${data.error||'desconocido'}</span>`;
   } catch(e) {
     el.innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
+  } finally {
+    SHEETS_URL = savedURL;
   }
 }
 
@@ -1860,7 +1850,7 @@ async function loadFromSheets() {
   if(!SHEETS_URL) { setSyncStatus('offline'); return; }
   setSyncStatus('loading');
   try {
-    const data = await sheetsGet(SHEETS_URL, 'load');
+    const data = await sheetsGet('load');
     if(!data.ok) { setSyncStatus('error'); return; }
     const r = data.data;
     let changed = false;
@@ -1883,25 +1873,25 @@ async function loadFromSheets() {
   }
 }
 
-// ── Save ─────────────────────────────────────────────────────────────────────
+// ── Save via GET (evita problema de redirección en POST) ─────────────────────
 async function pushToSheets() {
   if(!SHEETS_URL || isSyncing) return;
   isSyncing = true;
   setSyncStatus('saving');
   try {
-    const data = await sheetsPost(SHEETS_URL, {
-      action: 'save',
-      state: {
-        transactions:    state.transactions,
-        presupuesto:     state.presupuesto,
-        cuentas:         state.cuentas,
-        cajitas:         state.cajitas,
-        deudas:          state.deudas,
-        ingresoEsperado: state.ingresoEsperado,
-        saldoInicialMes: state.saldoInicialMes,
-      }
-    });
+    const payload = {
+      transactions:    state.transactions,
+      presupuesto:     state.presupuesto,
+      cuentas:         state.cuentas,
+      cajitas:         state.cajitas,
+      deudas:          state.deudas,
+      ingresoEsperado: state.ingresoEsperado,
+      saldoInicialMes: state.saldoInicialMes,
+    };
+    const stateParam = encodeURIComponent(JSON.stringify(payload));
+    const data = await sheetsGet('save', 'state=' + stateParam);
     setSyncStatus(data.ok ? 'ok' : 'error');
+    if(!data.ok) console.error('Save error:', data.error);
   } catch(e) {
     setSyncStatus('error');
     console.error('Push failed:', e.message);
@@ -1917,7 +1907,6 @@ function scheduleSync() {
   setSyncStatus('saving');
   syncTimeout = setTimeout(pushToSheets, 3000);
 }
-
 // ── INIT ──
 renderAll();
 if(SHEETS_URL) { loadFromSheets(); } else { setSyncStatus('offline'); }
