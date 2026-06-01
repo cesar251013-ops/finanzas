@@ -1779,9 +1779,10 @@ document.addEventListener('click', e => {
 // ═══════════════════════════════════════════════════════════════════════════
 // GOOGLE SHEETS SYNC — todo via GET para evitar problema de redirección POST
 // ═══════════════════════════════════════════════════════════════════════════
-let SHEETS_URL  = localStorage.getItem('finanzas_sheets_url') || '';
-let syncTimeout = null;
-let isSyncing   = false;
+let SHEETS_URL      = localStorage.getItem('finanzas_sheets_url') || '';
+let syncTimeout     = null;
+let isSyncing       = false;
+let initialLoadDone = false;  // blocks auto-save until first load completes
 
 function setSyncStatus(status) {
   const dot   = $('sync-dot');
@@ -1870,6 +1871,8 @@ async function loadFromSheets() {
   } catch(e) {
     setSyncStatus('error');
     console.error('Load failed:', e.message);
+  } finally {
+    initialLoadDone = true;
   }
 }
 
@@ -1902,14 +1905,14 @@ async function pushToSheets() {
 
 // ── Auto-save debounce ───────────────────────────────────────────────────────
 function scheduleSync() {
-  if(!SHEETS_URL) return;
+  if(!SHEETS_URL || !initialLoadDone) return;
   clearTimeout(syncTimeout);
   setSyncStatus('saving');
   syncTimeout = setTimeout(pushToSheets, 3000);
 }
 // ── INIT ──
 renderAll();
-if(SHEETS_URL) { loadFromSheets(); } else { setSyncStatus('offline'); }
+if(SHEETS_URL) { loadFromSheets(); } else { initialLoadDone = true; setSyncStatus('offline'); }
 </script>
 </body>
 </html>
