@@ -843,9 +843,7 @@ const state = {
     {id:'banamex',         name:'Banamex',            saldo:2665.83, type:'tdc',    class:'banamex',   corte:21, pago:10},
   ],
 
-  transactions: [
-    {id:1, date:'2025-06-01', desc:'Salario CGP — quincena', type:'ingreso', amount:10475, account:'santander_cuenta', presCat:null, note:''},
-  ],
+  transactions: [],  // datos vienen de Sheets
 
   // cajitas: saldo = total en cajita; ganancias = intereses ganados; retirada = ganancias ya retiradas
   // saldoPropio = saldo - ganancias + retirada  (lo que el usuario aportó y puede retirar libremente)
@@ -1855,7 +1853,7 @@ async function loadFromSheets() {
     if(!data.ok) { setSyncStatus('error'); return; }
     const r = data.data;
     let changed = false;
-    if(r.transactions && r.transactions.length)       { state.transactions    = r.transactions;    changed = true; }
+    if(r.transactions)                                { state.transactions    = r.transactions;    changed = true; }
     if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     changed = true; }
     if(r.cuentas      && r.cuentas.length)            { state.cuentas         = r.cuentas;         changed = true; }
     if(r.cajitas      && r.cajitas.length)            { state.cajitas         = r.cajitas;         changed = true; }
