@@ -1859,9 +1859,16 @@ async function loadFromSheets() {
     if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     changed = true; }
     if(r.cuentas      && r.cuentas.length)            { state.cuentas         = r.cuentas;         changed = true; }
     if(r.cajitas      && r.cajitas.length)            { state.cajitas         = r.cajitas;         changed = true; }
-    if(r.deudas)                                      { state.deudas          = r.deudas;          changed = true; }
+    if(r.deudas != null)                              { state.deudas          = r.deudas;          changed = true; }
     if(r.ingresoEsperado)                             { state.ingresoEsperado = r.ingresoEsperado; changed = true; }
     if(r.saldoInicialMes)                             { state.saldoInicialMes = r.saldoInicialMes; changed = true; }
+    // Restore individual account balances explicitly
+    if(r.saldosCuentas) {
+      state.cuentas.forEach(c => {
+        if(r.saldosCuentas[c.id] !== undefined) c.saldo = r.saldosCuentas[c.id];
+      });
+      changed = true;
+    }
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
       nextId = Math.max(nextId, maxId + 1);
@@ -1890,6 +1897,7 @@ async function pushToSheets() {
       deudas:          state.deudas,
       ingresoEsperado: state.ingresoEsperado,
       saldoInicialMes: state.saldoInicialMes,
+      saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
     };
     const stateParam = encodeURIComponent(JSON.stringify(payload));
     const data = await sheetsGet('save', 'state=' + stateParam);
