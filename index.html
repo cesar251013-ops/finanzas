@@ -1169,7 +1169,7 @@ function renderTransactions() {
 function onIngresoChange() {
   const v = parseFloat($('ingreso-esperado').value)||0;
   state.ingresoEsperado[state.currentMonth] = v;
-  renderDashboard();
+  renderDashboard(); scheduleSync();
 }
 
 function renderPresupuesto() {
@@ -1241,24 +1241,23 @@ function renderPresupuesto() {
 
 function updateRowName(id, section, val) {
   const row = state.presupuesto[section].find(r=>r.id===id);
-  if(row) { row.name = val; }
-  // rebuild pres categories in tx modal if open
+  if(row) { row.name = val; scheduleSync(); }
 }
 
 function updateRow(id, field, val, section) {
   const row = state.presupuesto[section].find(r=>r.id===id);
-  if(row) { row[field] = parseFloat(val)||0; renderPresupuesto(); renderDashboard(); }
+  if(row) { row[field] = parseFloat(val)||0; renderPresupuesto(); renderDashboard(); scheduleSync(); }
 }
 
 function delRow(id, section) {
   state.presupuesto[section] = state.presupuesto[section].filter(r=>r.id!==id);
-  renderPresupuesto(); renderDashboard();
+  renderPresupuesto(); renderDashboard(); scheduleSync();
 }
 
 function addRow(section) {
   const names = {needs:'Nueva necesidad', savings:'Nuevo ahorro', personal:'Nuevo gasto'};
   state.presupuesto[section].push({id:++nextId, name:names[section], bud:0, real:0});
-  renderPresupuesto();
+  renderPresupuesto(); scheduleSync();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1467,7 +1466,7 @@ function saveCajita() {
   if(idx >= 0) state.cajitas[idx] = c;
   else state.cajitas.push(c);
   $('cajita-modal').style.display = 'none';
-  renderCajitas(); renderDashboard();
+  renderCajitas(); renderDashboard(); scheduleSync();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1475,7 +1474,7 @@ function saveCajita() {
 // ═══════════════════════════════════════════════════════════════════════════
 function saveFlujoSaldoInicial(val) {
   state.saldoInicialMes[state.currentMonth] = parseFloat(val) || 0;
-  renderFlujo();
+  renderFlujo(); scheduleSync();
 }
 
 function renderFlujo() {
@@ -1606,7 +1605,7 @@ function saveSaldos() {
   if(ef) ef.saldo = parseFloat($('saldo-efectivo').value) || 0;
   if(sc) sc.saldo = parseFloat($('saldo-santander-cuenta').value) || 0;
   $('saldo-modal').style.display = 'none';
-  renderDashboard();
+  renderDashboard(); scheduleSync();
 }
 
 
@@ -1652,18 +1651,18 @@ function saveDeuda() {
   if(idx >= 0) state.deudas[idx] = d;
   else state.deudas.unshift(d);
   $('deuda-modal').style.display = 'none';
-  renderDeudas();
+  renderDeudas(); scheduleSync();
 }
 
 function toggleDeudaStatus(idx) {
   const d = state.deudas[idx];
   d.status = d.status === 'pendiente' ? 'liquidado' : 'pendiente';
-  renderDeudas();
+  renderDeudas(); scheduleSync();
 }
 
 function deleteDeuda(idx) {
   state.deudas.splice(idx, 1);
-  renderDeudas();
+  renderDeudas(); scheduleSync();
 }
 
 function setDeudaFilter(f, el) {
