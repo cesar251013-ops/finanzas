@@ -462,9 +462,9 @@
         <a href="https://script.google.com" target="_blank" style="color:var(--blue);font-weight:600">→ Abrir Apps Script</a>
       </div>
       <div class="field-group">
-        <div class="field-label">URL del Web App</div>
+        <div class="field-label">URL del Cloudflare Worker</div>
         <input type="text" class="field-input" id="sheets-url-input"
-          placeholder="https://script.google.com/macros/s/...">
+          placeholder="https://tu-worker.tu-usuario.workers.dev">
       </div>
       <div id="sheets-test-result" style="font-size:.78rem;min-height:20px;margin-top:4px"></div>
       <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
@@ -475,11 +475,10 @@
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:.76rem;font-weight:700;color:rgba(14,15,20,.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Instrucciones rápidas</div>
         <ol style="font-size:.78rem;color:rgba(14,15,20,.55);line-height:1.9;padding-left:16px">
-          <li>Ve a <b>script.google.com</b> → Nuevo proyecto</li>
-          <li>Pega el contenido del archivo <b>FinanzasScript.gs</b></li>
-          <li>Menú <b>Implementar → Nueva implementación</b></li>
-          <li>Tipo: <b>Aplicación web</b> · Acceso: <b>Cualquiera</b></li>
-          <li>Copia la <b>URL de la aplicación web</b> y pégala arriba</li>
+          <li>Ve a <b>cloudflare.com</b> → Workers & Pages → Create</li>
+          <li>Pega el contenido del archivo <b>worker.js</b></li>
+          <li>Clic en <b>Deploy</b></li>
+          <li>Copia la URL <b>*.workers.dev</b> y pégala arriba</li>
         </ol>
       </div>
     </div>
@@ -1774,24 +1773,70 @@ document.addEventListener('click', e => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GOOGLE SHEETS SYNC — todo via GET para evitar problema de redirección POST
+// SYNC: localStorage (primario) + Cloudflare Worker → Apps Script (nube)
 // ═══════════════════════════════════════════════════════════════════════════
-let SHEETS_URL      = localStorage.getItem('finanzas_sheets_url') || '';
-let syncTimeout     = null;
-let isSyncing       = false;
-let initialLoadDone = false;  // blocks auto-save until first load completes
+const LS_KEY        = 'finanzas_state_v1';
+const LS_URL_KEY    = 'finanzas_worker_url';      // URL del Worker de Cloudflare
+let   WORKER_URL    = localStorage.getItem(LS_URL_KEY) || '';
+let   syncTimeout   = null;
+let   isSyncing     = false;
+let   initialLoadDone = false;
 
+// ── localStorage ─────────────────────────────────────────────────────────────
+function saveToLocal() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      transactions:    state.transactions,
+      presupuesto:     state.presupuesto,
+      cuentas:         state.cuentas,
+      cajitas:         state.cajitas,
+      deudas:          state.deudas,
+      ingresoEsperado: state.ingresoEsperado,
+      saldoInicialMes: state.saldoInicialMes,
+      saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
+    }));
+  } catch(e) { console.warn('localStorage save failed:', e.message); }
+}
+
+function loadFromLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    const r = JSON.parse(raw);
+    let ok = false;
+    if(r.transactions && r.transactions.length)       { state.transactions    = r.transactions;    ok = true; }
+    if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     ok = true; }
+    if(r.cuentas      && r.cuentas.length)            { state.cuentas         = r.cuentas;         ok = true; }
+    if(r.cajitas      && r.cajitas.length)            { state.cajitas         = r.cajitas;         ok = true; }
+    if(r.deudas != null)                              { state.deudas          = r.deudas;          ok = true; }
+    if(r.ingresoEsperado)                             { state.ingresoEsperado = r.ingresoEsperado; ok = true; }
+    if(r.saldoInicialMes)                             { state.saldoInicialMes = r.saldoInicialMes; ok = true; }
+    if(r.saldosCuentas) {
+      state.cuentas.forEach(c => {
+        if(r.saldosCuentas[c.id] !== undefined) c.saldo = r.saldosCuentas[c.id];
+      });
+    }
+    if(ok) {
+      const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
+      nextId = Math.max(nextId, maxId + 1);
+    }
+    return ok;
+  } catch(e) { return false; }
+}
+
+// ── Status ────────────────────────────────────────────────────────────────────
 function setSyncStatus(status) {
   const dot   = $('sync-dot');
   const label = $('sync-label');
   if(!dot || !label) return;
   const map = {
-    idle:    ['#ccc',           'Sin sincronizar'],
+    idle:    ['#ccc',           'Sin configurar'],
     saving:  ['var(--gold)',    'Guardando…'],
     ok:      ['var(--green)',   'Sincronizado ✓'],
-    error:   ['var(--red)',     'Error — toca para configurar'],
-    offline: ['#aaa',           'Toca para conectar Sheets'],
+    error:   ['var(--red)',     'Error · toca para configurar'],
+    offline: ['#aaa',           'Solo local · toca para conectar'],
     loading: ['var(--blue)',    'Cargando…'],
+    local:   ['#6EC98F',        'Local ✓ · sin nube'],
   };
   const [color, text] = map[status] || map.idle;
   dot.style.background = color;
@@ -1799,67 +1844,73 @@ function setSyncStatus(status) {
 }
 
 function openSheetsConfig() {
-  $('sheets-url-input').value = SHEETS_URL;
+  $('sheets-url-input').value = WORKER_URL;
   $('sheets-test-result').innerHTML = '';
   $('sheets-modal').style.display = 'flex';
 }
 
 function saveSheetsConfig() {
   const url = $('sheets-url-input').value.trim();
-  SHEETS_URL = url;
-  localStorage.setItem('finanzas_sheets_url', url);
+  WORKER_URL = url;
+  localStorage.setItem(LS_URL_KEY, url);
   $('sheets-modal').style.display = 'none';
-  if(url) loadFromSheets();
+  if(url) { pushToCloud(); loadFromCloud(); }
   else    setSyncStatus('offline');
 }
 
-// ── Core fetch GET ───────────────────────────────────────────────────────────
-async function sheetsGet(action, extraParams) {
-  let url = SHEETS_URL + '?action=' + action;
-  if(extraParams) url += '&' + extraParams;
-  const res  = await fetch(url, { redirect: 'follow', cache: 'no-store' });
+// ── HTTP helpers (Worker has CORS — no issues) ────────────────────────────────
+async function cloudGet(action) {
+  const res  = await fetch(`${WORKER_URL}?action=${action}`, { cache: 'no-store' });
   const text = await res.text();
-  try { return JSON.parse(text); }
-  catch(e) { throw new Error('Respuesta inválida: ' + text.slice(0,100)); }
+  return JSON.parse(text);
 }
 
-// ── Test ─────────────────────────────────────────────────────────────────────
+async function cloudPost(body) {
+  const res  = await fetch(WORKER_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  const text = await res.text();
+  return JSON.parse(text);
+}
+
+// ── Test ──────────────────────────────────────────────────────────────────────
 async function testSheetsConnection() {
   const url = $('sheets-url-input').value.trim();
   const el  = $('sheets-test-result');
-  if(!url) { el.innerHTML = '<span style="color:var(--red)">⚠️ Ingresa la URL primero</span>'; return; }
+  if(!url) { el.innerHTML = '<span style="color:var(--red)">⚠️ Ingresa la URL del Worker primero</span>'; return; }
   el.innerHTML = '<span style="color:var(--gold)">⏳ Probando…</span>';
-  const savedURL = SHEETS_URL;
-  SHEETS_URL = url;
+  const saved = WORKER_URL;
+  WORKER_URL = url;
   try {
-    const data = await sheetsGet('ping');
+    const data = await cloudGet('ping');
     el.innerHTML = data.ok
-      ? '<span style="color:var(--green)">✅ Conexión exitosa — puedes guardar</span>'
-      : `<span style="color:var(--red)">❌ Error: ${data.error||'desconocido'}</span>`;
+      ? '<span style="color:var(--green)">✅ Conectado correctamente</span>'
+      : `<span style="color:var(--red)">❌ ${data.error}</span>`;
   } catch(e) {
     el.innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
   } finally {
-    SHEETS_URL = savedURL;
+    WORKER_URL = saved;
   }
 }
 
-// ── Load ─────────────────────────────────────────────────────────────────────
-async function loadFromSheets() {
-  if(!SHEETS_URL) { setSyncStatus('offline'); return; }
+// ── Load from cloud ───────────────────────────────────────────────────────────
+async function loadFromCloud() {
+  if(!WORKER_URL) return;
   setSyncStatus('loading');
   try {
-    const data = await sheetsGet('load');
+    const data = await cloudGet('load');
     if(!data.ok) { setSyncStatus('error'); return; }
     const r = data.data;
     let changed = false;
-    if(r.transactions)                                { state.transactions    = r.transactions;    changed = true; }
+    if(r.transactions && r.transactions.length)       { state.transactions    = r.transactions;    changed = true; }
     if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     changed = true; }
     if(r.cuentas      && r.cuentas.length)            { state.cuentas         = r.cuentas;         changed = true; }
     if(r.cajitas      && r.cajitas.length)            { state.cajitas         = r.cajitas;         changed = true; }
     if(r.deudas != null)                              { state.deudas          = r.deudas;          changed = true; }
     if(r.ingresoEsperado)                             { state.ingresoEsperado = r.ingresoEsperado; changed = true; }
     if(r.saldoInicialMes)                             { state.saldoInicialMes = r.saldoInicialMes; changed = true; }
-    // Restore individual account balances explicitly
     if(r.saldosCuentas) {
       state.cuentas.forEach(c => {
         if(r.saldosCuentas[c.id] !== undefined) c.saldo = r.saldosCuentas[c.id];
@@ -1869,66 +1920,61 @@ async function loadFromSheets() {
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
       nextId = Math.max(nextId, maxId + 1);
+      saveToLocal();
       renderAll();
     }
     setSyncStatus('ok');
   } catch(e) {
     setSyncStatus('error');
-    console.error('Load failed:', e.message);
+    console.error('Cloud load failed:', e.message);
   } finally {
     initialLoadDone = true;
   }
 }
 
-// ── Save via GET (evita problema de redirección en POST) ─────────────────────
-async function pushToSheets() {
-  if(!SHEETS_URL || isSyncing) return;
+// ── Push to cloud ─────────────────────────────────────────────────────────────
+async function pushToCloud() {
+  if(!WORKER_URL || isSyncing) return;
   isSyncing = true;
   setSyncStatus('saving');
   try {
-    // Sanitize: replace null with empty string to avoid JSON parse errors in Apps Script
-    const sanitizeTx = tx => ({
-      ...tx,
-      presCat: tx.presCat ?? '',
-      note:    tx.note    ?? '',
-      date:    tx.date    || '',
+    const data = await cloudPost({
+      action: 'save',
+      state: {
+        transactions:    state.transactions.map(t => ({...t, presCat: t.presCat ?? '', note: t.note ?? '', date: t.date || ''})),
+        presupuesto:     state.presupuesto,
+        cuentas:         state.cuentas,
+        cajitas:         state.cajitas,
+        deudas:          (state.deudas||[]).map(d => ({...d, vence: d.vence ?? '', nota: d.nota ?? ''})),
+        ingresoEsperado: state.ingresoEsperado,
+        saldoInicialMes: state.saldoInicialMes,
+        saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
+      }
     });
-    const payload = {
-      transactions:    state.transactions.map(sanitizeTx),
-      presupuesto:     state.presupuesto,
-      cuentas:         state.cuentas,
-      cajitas:         state.cajitas,
-      deudas:          (state.deudas||[]).map(d => ({
-                         ...d,
-                         vence: d.vence ?? '',
-                         nota:  d.nota  ?? '',
-                       })),
-      ingresoEsperado: state.ingresoEsperado,
-      saldoInicialMes: state.saldoInicialMes,
-      saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
-    };
-    const stateParam = encodeURIComponent(JSON.stringify(payload));
-    const data = await sheetsGet('save', 'state=' + stateParam);
     setSyncStatus(data.ok ? 'ok' : 'error');
-    if(!data.ok) console.error('Save error:', data.error);
   } catch(e) {
     setSyncStatus('error');
-    console.error('Push failed:', e.message);
+    console.error('Cloud push failed:', e.message);
   } finally {
     isSyncing = false;
   }
 }
 
-// ── Auto-save debounce ───────────────────────────────────────────────────────
+// ── scheduleSync: localStorage inmediato + nube con debounce ──────────────────
 function scheduleSync() {
-  if(!SHEETS_URL || !initialLoadDone) return;
+  saveToLocal();
+  if(!WORKER_URL || !initialLoadDone) {
+    setSyncStatus(WORKER_URL ? 'saving' : 'local');
+    return;
+  }
   clearTimeout(syncTimeout);
   setSyncStatus('saving');
-  syncTimeout = setTimeout(pushToSheets, 3000);
+  syncTimeout = setTimeout(pushToCloud, 3000);
 }
-// ── INIT ──
-renderAll();
-if(SHEETS_URL) { loadFromSheets(); } else { initialLoadDone = true; setSyncStatus('offline'); }
+
+// Alias for backwards compat
+const loadFromSheets = loadFromCloud;
+const pushToSheets   = pushToCloud;
 </script>
 </body>
 </html>
