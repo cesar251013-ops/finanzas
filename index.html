@@ -1784,6 +1784,7 @@ let   initialLoadDone = false;
 
 // ── localStorage ─────────────────────────────────────────────────────────────
 function saveToLocal() {
+  if(!initialLoadDone) return;  // Don't overwrite local storage during initial load
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
       transactions:    state.transactions,
@@ -1927,9 +1928,10 @@ async function loadFromCloud() {
   } catch(e) {
     setSyncStatus('error');
     console.error('Cloud load failed:', e.message);
-  } finally {
     initialLoadDone = true;
+    throw e;  // Let init's .catch handle fallback
   }
+  initialLoadDone = true;
 }
 
 // ── Push to cloud ─────────────────────────────────────────────────────────────
@@ -1962,9 +1964,10 @@ async function pushToCloud() {
 
 // ── scheduleSync: localStorage inmediato + nube con debounce ──────────────────
 function scheduleSync() {
+  if(!initialLoadDone) return;  // Don't sync during initial load
   saveToLocal();
-  if(!WORKER_URL || !initialLoadDone) {
-    setSyncStatus(WORKER_URL ? 'saving' : 'local');
+  if(!WORKER_URL) {
+    setSyncStatus('local');
     return;
   }
   clearTimeout(syncTimeout);
@@ -1975,6 +1978,28 @@ function scheduleSync() {
 // Alias for backwards compat
 const loadFromSheets = loadFromCloud;
 const pushToSheets   = pushToCloud;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INIT — Cloud as source of truth, localStorage as fallback
+// ═══════════════════════════════════════════════════════════════════════════
+initialLoadDone = false;
+renderAll();
+
+if(WORKER_URL) {
+  // Cloud is source of truth — try it first
+  loadFromCloud().catch(e => {
+    console.warn('Cloud load failed, using localStorage:', e.message);
+    if(loadFromLocal()) renderAll();
+    initialLoadDone = true;
+    setSyncStatus('local');
+  });
+} else {
+  // No cloud configured — use localStorage only
+  if(loadFromLocal()) renderAll();
+  initialLoadDone = true;
+  setSyncStatus('offline');
+}
+
 </script>
 </body>
 </html>
