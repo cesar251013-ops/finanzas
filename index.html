@@ -531,7 +531,8 @@
     <button class="tx-filter-btn" onclick="setTxFilter('egreso',this)">🔴 Egresos</button>
     <button class="tx-filter-btn" onclick="setTxFilter('bbva',this)">BBVA</button>
     <button class="tx-filter-btn" onclick="setTxFilter('nu',this)">Nu</button>
-    <button class="tx-filter-btn" onclick="setTxFilter('santander',this)">Santander</button>
+    <button class="tx-filter-btn" onclick="setTxFilter('santander',this)">Santander TDC</button>
+    <button class="tx-filter-btn" onclick="setTxFilter('santander_cuenta',this)">Santander CTA</button>
     <button class="tx-filter-btn" onclick="setTxFilter('banamex',this)">Banamex</button>
     <button class="tx-filter-btn" onclick="setTxFilter('efectivo',this)">Efectivo</button>
   </div>
@@ -745,12 +746,14 @@
     <button class="btn btn-primary btn-sm" onclick="openDeudaModal()">+ Agregar deuda</button>
   </div>
 
-  <!-- Filter tabs -->
-  <div class="tx-filters" style="margin-bottom:14px">
-    <button class="tx-filter-btn active" onclick="setDeudaFilter('all',this)">Todas</button>
-    <button class="tx-filter-btn" onclick="setDeudaFilter('pendiente',this)">⏳ Pendientes</button>
-    <button class="tx-filter-btn" onclick="setDeudaFilter('liquidado',this)">✅ Liquidadas</button>
+  <!-- Status filter tabs -->
+  <div class="tx-filters" style="margin-bottom:10px">
+    <button class="tx-filter-btn active" onclick="setDeudaStatusFilter('all',this)">Todas</button>
+    <button class="tx-filter-btn" onclick="setDeudaStatusFilter('pendiente',this)">⏳ Pendientes</button>
+    <button class="tx-filter-btn" onclick="setDeudaStatusFilter('liquidado',this)">✅ Liquidadas</button>
   </div>
+  <!-- Deudor filter tabs (dynamic) -->
+  <div class="tx-filters" id="deuda-deudor-filters" style="margin-bottom:14px"></div>
 
   <div class="card">
     <div id="deudas-list"></div>
@@ -1284,7 +1287,8 @@ function renderTarjetas() {
   // TDC cajita saldo propio for color comparison
   const cajTDC = state.cajitas.find(c => c.isTDC);
   const tdcDisponible = cajTDC ? saldoPropio(cajTDC) : 0;
-  const deudaColor = total > tdcDisponible ? 'var(--red)' : total === tdcDisponible ? 'var(--green)' : 'var(--gold)';
+  // Verde si la deuda total >= saldo propio de la cajita TDC (cubierta), rojo si la deuda excede la cajita
+  const deudaColor = total >= tdcDisponible ? 'var(--green)' : 'var(--red)';
   const deudaEl = $('total-deuda');
   if(deudaEl) { deudaEl.textContent = fmt(total); deudaEl.style.color = deudaColor; }
 
@@ -1664,9 +1668,20 @@ function deleteDeuda(idx) {
   renderDeudas(); scheduleSync();
 }
 
-function setDeudaFilter(f, el) {
-  deudaFilter = f;
-  document.querySelectorAll('#deudas .tx-filter-btn').forEach(b => b.classList.remove('active'));
+let deudaStatusFilter = 'all';
+let deudaDeudorFilter = 'all';
+
+function setDeudaStatusFilter(f, el) {
+  deudaStatusFilter = f;
+  deudaFilter = f; // keep legacy var in sync
+  document.querySelectorAll('#deudas .tx-filters:first-of-type .tx-filter-btn').forEach(b => b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  renderDeudas();
+}
+
+function setDeudaDeudorFilter(name, el) {
+  deudaDeudorFilter = name;
+  document.querySelectorAll('#deuda-deudor-filters .tx-filter-btn').forEach(b => b.classList.remove('active'));
   if(el) el.classList.add('active');
   renderDeudas();
 }
@@ -1684,9 +1699,29 @@ function renderDeudas() {
   const ep = $('deu-pagadas');
   if(ep) ep.textContent = liquidadas.length;
 
-  const filtered = deudaFilter === 'all' ? all
-    : deudaFilter === 'pendiente' ? pendientes
+  // Build deudor filter pills dynamically
+  const deudoresUnicos = [...new Set(all.map(d => d.quien))].filter(Boolean).sort();
+  const deudoresEl = $('deuda-deudor-filters');
+  if(deudoresEl) {
+    if(deudoresUnicos.length === 0) {
+      deudoresEl.innerHTML = '';
+    } else {
+      deudoresEl.innerHTML =
+        `<button class="tx-filter-btn${deudaDeudorFilter==='all'?' active':''}" onclick="setDeudaDeudorFilter('all',this)">👥 Todos los deudores</button>` +
+        deudoresUnicos.map(d =>
+          `<button class="tx-filter-btn${deudaDeudorFilter===d?' active':''}" onclick="setDeudaDeudorFilter('${d.replace(/'/g, "\\'")}',this)">${d}</button>`
+        ).join('');
+    }
+  }
+
+  // Apply status filter
+  let filtered = deudaStatusFilter === 'all' ? all
+    : deudaStatusFilter === 'pendiente' ? pendientes
     : liquidadas;
+  // Apply deudor filter
+  if(deudaDeudorFilter !== 'all') {
+    filtered = filtered.filter(d => d.quien === deudaDeudorFilter);
+  }
 
   const list = $('deudas-list');
   if(!list) return;
