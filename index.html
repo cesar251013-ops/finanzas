@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Finanzas Personales 2025</title>
+<title>Finanzas Personales 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -331,7 +331,6 @@
 <!-- SIDEBAR -->
 <nav class="sidebar">
   <div class="sidebar-logo">
-    <span>2025</span>
     <h1>Finanzas<br>Personales</h1>
   </div>
   <div class="sidebar-nav">
@@ -402,7 +401,7 @@
       <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#ccc;display:inline-block"></span>
       <span id="sync-label">Sin sincronizar</span>
     </div>
-    <button onclick="openDateRangeModal()" id="date-range-btn" style="border:1.5px solid var(--border);border-radius:8px;padding:6px 14px;font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;background:var(--gold-lt);cursor:pointer;color:var(--ink)">📅 Junio 2025</button>
+    <button onclick="openDateRangeModal()" id="date-range-btn" style="border:1.5px solid var(--border);border-radius:8px;padding:6px 14px;font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;background:var(--gold-lt);cursor:pointer;color:var(--ink)">📅 Junio 2026</button>
   </div>
 </div>
 
@@ -490,7 +489,7 @@
   <div class="card" style="margin-bottom:20px">
     <div class="card-header">
       <span class="card-title">Resumen por categoría</span>
-      <span id="pvr-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Mayo 2025</span>
+      <span id="pvr-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Mayo 2026</span>
     </div>
     <div id="pvr-list" style="padding:14px 20px"></div>
   </div>
@@ -718,7 +717,7 @@
   <div class="card" style="margin-bottom:16px">
     <div class="card-header">
       <span class="card-title">Saldo inicial del mes</span>
-      <span id="flujo-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Junio 2025</span>
+      <span id="flujo-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Junio 2026</span>
     </div>
     <div style="padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <span style="font-size:.85rem;font-weight:600;white-space:nowrap">Saldo al inicio del mes ($)</span>
@@ -847,12 +846,12 @@
       <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(14,15,20,.4);margin-bottom:6px">Mes específico</div>
       <select class="field-input" id="date-month-quick" onchange="setMonthQuick(this.value)">
         <option value="">— Seleccionar mes —</option>
-        <option value="0">Enero 2025</option><option value="1">Febrero 2025</option>
-        <option value="2">Marzo 2025</option><option value="3">Abril 2025</option>
-        <option value="4">Mayo 2025</option><option value="5">Junio 2025</option>
-        <option value="6">Julio 2025</option><option value="7">Agosto 2025</option>
-        <option value="8">Septiembre 2025</option><option value="9">Octubre 2025</option>
-        <option value="10">Noviembre 2025</option><option value="11">Diciembre 2025</option>
+        <option value="0">Enero 2026</option><option value="1">Febrero 2026</option>
+        <option value="2">Marzo 2026</option><option value="3">Abril 2026</option>
+        <option value="4">Mayo 2026</option><option value="5">Junio 2026</option>
+        <option value="6">Julio 2026</option><option value="7">Agosto 2026</option>
+        <option value="8">Septiembre 2026</option><option value="9">Octubre 2026</option>
+        <option value="10">Noviembre 2026</option><option value="11">Diciembre 2026</option>
       </select>
     </div>
     <div class="modal-actions">
@@ -1118,7 +1117,7 @@ function renderAll() {
   // Sync global month label
   const monthLabel = (dateRange.from || dateRange.to)
     ? 'Rango personalizado'
-    : MONTHS[state.currentMonth] + ' 2025';
+    : MONTHS[state.currentMonth] + ' 2026';
   if($('flujo-month-label')) $('flujo-month-label').textContent = monthLabel;
   if($('pvr-month-label'))   $('pvr-month-label').textContent   = monthLabel;
 }
@@ -1843,7 +1842,7 @@ function saveFlujoSaldoInicial(val) {
 function renderFlujo() {
   const m = state.currentMonth;
   const monthEl = $('flujo-month-label');
-  if(monthEl) monthEl.textContent = MONTHS[m] + ' 2025';
+  if(monthEl) monthEl.textContent = MONTHS[m] + ' 2026';
 
   // Sync saldo inicial input
   const siEl = $('flujo-saldo-inicial');
@@ -2558,7 +2557,7 @@ function updateDateRangeButton() {
     btn.style.background = 'var(--gold)';
     btn.style.color = '#fff';
   } else {
-    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2025';
+    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2026';
     btn.style.background = 'var(--gold-lt)';
     btn.style.color = 'var(--ink)';
   }
