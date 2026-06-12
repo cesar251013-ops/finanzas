@@ -119,6 +119,8 @@
   .flujo-table .section-row td{background:var(--cream);font-weight:700;font-family:'DM Sans',sans-serif;font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:rgba(14,15,20,.5)}
   .flujo-table .total-row td{background:var(--ink);color:#fff;font-weight:700}
   .flujo-table .saldo-row td{background:var(--gold-lt);font-weight:700;font-family:'DM Serif Display',serif;font-size:.92rem}
+  .flujo-table .detail-row td{font-size:.75rem;color:rgba(14,15,20,.65);background:#fafaf7}
+  .flujo-table .detail-row td:first-child{padding-left:24px;font-style:italic}
   .pos{color:var(--green)} .neg{color:var(--red)}
 
   /* Presupuesto */
@@ -400,13 +402,7 @@
       <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#ccc;display:inline-block"></span>
       <span id="sync-label">Sin sincronizar</span>
     </div>
-    <span style="font-size:.8rem;color:rgba(14,15,20,.45)">Mes activo:</span>
-    <select id="global-month" onchange="setGlobalMonth(this.value)" style="border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;font-family:'DM Sans',sans-serif;font-size:.83rem;font-weight:600;background:var(--gold-lt);cursor:pointer">
-      <option value="0">Enero</option><option value="1">Febrero</option><option value="2">Marzo</option>
-      <option value="3">Abril</option><option value="4">Mayo</option><option value="5" selected>Junio</option>
-      <option value="6">Julio</option><option value="7">Agosto</option><option value="8">Septiembre</option>
-      <option value="9">Octubre</option><option value="10">Noviembre</option><option value="11">Diciembre</option>
-    </select>
+    <button onclick="openDateRangeModal()" id="date-range-btn" style="border:1.5px solid var(--border);border-radius:8px;padding:6px 14px;font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;background:var(--gold-lt);cursor:pointer;color:var(--ink)">📅 Junio 2025</button>
   </div>
 </div>
 
@@ -490,25 +486,45 @@
     <div class="sb-item"><div class="sb-label">Patrimonio neto</div><div class="sb-value gr" id="sb-patrimonio">$0</div></div>
   </div>
 
+  <!-- Resumen por categoría -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <span class="card-title">Resumen por categoría</span>
+      <span id="pvr-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Mayo 2025</span>
+    </div>
+    <div id="pvr-list" style="padding:14px 20px"></div>
+  </div>
+
+  <!-- Dos donas: presupuesto vs real -->
   <div class="two-col">
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Presupuesto vs Real</span>
-        <span id="pvr-month-label" style="font-size:.8rem;color:rgba(14,15,20,.45)">Mayo 2025</span>
-      </div>
-      <div id="pvr-list" style="padding:10px 20px"></div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Distribución del ingreso</span>
+        <span class="card-title">📋 Distribución presupuestada</span>
       </div>
       <div class="card-body" style="display:flex;align-items:center">
         <div class="donut-wrap">
-          <svg viewBox="0 0 120 120" width="150" height="150" id="donut-svg">
+          <svg viewBox="0 0 120 120" width="150" height="150" id="donut-bud-svg">
             <circle cx="60" cy="60" r="48" fill="none" stroke="#EDE9E0" stroke-width="14"/>
-            <circle id="d-needs" cx="60" cy="60" r="48" fill="none" stroke="#1A3A6B" stroke-width="14" stroke-dasharray="90 212" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
-            <circle id="d-save"  cx="60" cy="60" r="48" fill="none" stroke="#5A2B82" stroke-width="14" stroke-dasharray="59 243" stroke-dashoffset="-90" transform="rotate(-90 60 60)"/>
-            <circle id="d-pers"  cx="60" cy="60" r="48" fill="none" stroke="#C9A84C" stroke-width="14" stroke-dasharray="45 257" stroke-dashoffset="-149" transform="rotate(-90 60 60)"/>
+            <circle id="db-needs" cx="60" cy="60" r="48" fill="none" stroke="#1A3A6B" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+            <circle id="db-save"  cx="60" cy="60" r="48" fill="none" stroke="#5A2B82" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+            <circle id="db-pers"  cx="60" cy="60" r="48" fill="none" stroke="#C9A84C" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+          </svg>
+          <div class="donut-center"><div class="donut-pct" id="donut-bud-pct">-</div><div class="donut-sub">presupuesto</div></div>
+        </div>
+        <div class="chart-legend" id="chart-bud-legend"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">💸 Distribución real (gastado)</span>
+      </div>
+      <div class="card-body" style="display:flex;align-items:center">
+        <div class="donut-wrap">
+          <svg viewBox="0 0 120 120" width="150" height="150" id="donut-real-svg">
+            <circle cx="60" cy="60" r="48" fill="none" stroke="#EDE9E0" stroke-width="14"/>
+            <circle id="d-needs" cx="60" cy="60" r="48" fill="none" stroke="#1A3A6B" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+            <circle id="d-save"  cx="60" cy="60" r="48" fill="none" stroke="#5A2B82" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+            <circle id="d-pers"  cx="60" cy="60" r="48" fill="none" stroke="#C9A84C" stroke-width="14" stroke-dasharray="0 302" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
           </svg>
           <div class="donut-center"><div class="donut-pct" id="donut-pct">-</div><div class="donut-sub">gastado</div></div>
         </div>
@@ -607,7 +623,11 @@
   <div class="summary-bar cols3" style="margin-bottom:20px">
     <div class="sb-item"><div class="sb-label">Deuda total</div><div class="sb-value rd" id="total-deuda">$0</div></div>
     <div class="sb-item"><div class="sb-label">Próximo pago</div><div class="sb-value wh" id="proximo-pago-info">—</div></div>
-    <div class="sb-item"><div class="sb-label">Tarjetas activas</div><div class="sb-value g">4</div></div>
+    <div class="sb-item"><div class="sb-label">Tarjetas activas</div><div class="sb-value g" id="tarjetas-count">0</div></div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button class="btn btn-primary btn-sm" onclick="openCardModal()">+ Nueva tarjeta</button>
   </div>
 
   <div id="tarjetas-list" style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap"></div>
@@ -628,6 +648,11 @@
         </div>
 
       </div>
+    </div>
+    <div style="padding:10px 20px;display:flex;gap:8px;border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="openPayCardModal()">💰 Pagar tarjeta</button>
+      <button class="btn btn-outline btn-sm" onclick="openCardModal(selectedCardId)">✏️ Editar</button>
+      <button class="btn-ghost" style="margin-left:auto" onclick="deleteCardConfirm()" title="Eliminar tarjeta">🗑️ Eliminar</button>
     </div>
     <div style="padding:10px 20px 6px;display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(14,15,20,.4)">Últimos movimientos</span>
@@ -797,6 +822,149 @@
 
 </div>
 
+
+<!-- ── Date range modal ── -->
+<div class="modal-overlay" id="date-range-modal" style="z-index:300">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-title">📅 Rango de fechas</div>
+    <div style="font-size:.8rem;color:rgba(14,15,20,.5);margin-bottom:14px">Filtra todos los datos por un período personalizado.</div>
+    <div class="field-group">
+      <div class="field-label">Desde</div>
+      <input type="date" class="field-input" id="date-from-input">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Hasta</div>
+      <input type="date" class="field-input" id="date-to-input">
+    </div>
+    <div style="margin:10px 0">
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(14,15,20,.4);margin-bottom:6px">Atajos</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn btn-outline btn-xs" onclick="setDateRangePreset('thisMonth')">Este mes</button>
+        <button class="btn btn-outline btn-xs" onclick="setDateRangePreset('lastMonth')">Mes pasado</button>
+        <button class="btn btn-outline btn-xs" onclick="setDateRangePreset('last30')">Últimos 30 días</button>
+        <button class="btn btn-outline btn-xs" onclick="setDateRangePreset('thisYear')">Este año</button>
+      </div>
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(14,15,20,.4);margin-bottom:6px">Mes específico</div>
+      <select class="field-input" id="date-month-quick" onchange="setMonthQuick(this.value)">
+        <option value="">— Seleccionar mes —</option>
+        <option value="0">Enero 2025</option><option value="1">Febrero 2025</option>
+        <option value="2">Marzo 2025</option><option value="3">Abril 2025</option>
+        <option value="4">Mayo 2025</option><option value="5">Junio 2025</option>
+        <option value="6">Julio 2025</option><option value="7">Agosto 2025</option>
+        <option value="8">Septiembre 2025</option><option value="9">Octubre 2025</option>
+        <option value="10">Noviembre 2025</option><option value="11">Diciembre 2025</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="applyDateRange()">Aplicar filtro</button>
+      <button class="btn btn-outline" onclick="clearDateRange()">Limpiar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Nueva/Editar tarjeta modal ── -->
+<div class="modal-overlay" id="card-modal" style="z-index:300">
+  <div class="modal-box">
+    <div class="modal-title" id="card-modal-title">Nueva tarjeta de crédito</div>
+    <input type="hidden" id="card-edit-id">
+    <div class="field-group">
+      <div class="field-label">Nombre del banco / tarjeta</div>
+      <input type="text" class="field-input" id="card-name" placeholder="Ej: BBVA, Nu, etc.">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Saldo deudor actual ($)</div>
+      <input type="number" class="field-input mono" id="card-saldo" placeholder="0.00">
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="field-group" style="flex:1">
+        <div class="field-label">Día de corte</div>
+        <input type="number" class="field-input mono" id="card-corte" min="1" max="31" placeholder="1-31">
+      </div>
+      <div class="field-group" style="flex:1">
+        <div class="field-label">Día de pago</div>
+        <input type="number" class="field-input mono" id="card-pago" min="1" max="31" placeholder="1-31">
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Color de la tarjeta</div>
+      <div id="card-color-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px"></div>
+      <input type="hidden" id="card-color" value="#1A3A6B">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="saveCard()">Guardar</button>
+      <button class="btn btn-outline" onclick="document.getElementById('card-modal').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Pagar tarjeta modal ── -->
+<div class="modal-overlay" id="pay-card-modal" style="z-index:300">
+  <div class="modal-box">
+    <div class="modal-title">💰 Pagar tarjeta</div>
+    <div id="pay-card-info" style="background:var(--cream);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-size:.75rem;color:rgba(14,15,20,.5);font-weight:600">Saldo actual</div>
+      <div id="pay-card-current" style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--red)">$0</div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Monto a pagar ($)</div>
+      <input type="number" class="field-input mono" id="pay-amount" placeholder="0.00">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Cuenta origen del pago</div>
+      <select class="field-input" id="pay-source">
+        <option value="efectivo">💵 Efectivo</option>
+        <option value="santander_cuenta">🏦 Santander (cuenta)</option>
+        <option value="cajita_tdc">🏦 Cajita TDC</option>
+        <option value="otro">Otro / No afectar saldos</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Fecha del pago</div>
+      <input type="date" class="field-input" id="pay-date">
+    </div>
+    <div style="background:var(--green-lt);border-radius:7px;padding:8px 10px;font-size:.76rem;color:var(--green);font-weight:600;margin-bottom:4px">
+      ✓ Esto solo reduce el saldo de la tarjeta, no se registra como movimiento de ingreso/egreso.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmPayCard()">Confirmar pago</button>
+      <button class="btn btn-outline" onclick="document.getElementById('pay-card-modal').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Liquidar deuda modal ── -->
+<div class="modal-overlay" id="liq-deuda-modal" style="z-index:300">
+  <div class="modal-box">
+    <div class="modal-title">✅ Marcar como cobrada</div>
+    <div id="liq-deuda-info" style="background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:14px"></div>
+    <div class="field-group">
+      <div class="field-label">Monto recibido ($)</div>
+      <input type="number" class="field-input mono" id="liq-amount">
+    </div>
+    <div class="field-group">
+      <div class="field-label">¿A dónde se recibió el dinero?</div>
+      <select class="field-input" id="liq-target" onchange="updateLiqTargetOptions()">
+        <option value="efectivo">💵 Efectivo</option>
+        <option value="santander_cuenta">🏦 Santander (cuenta)</option>
+        <option value="cajita_tdc">🏦 Cajita TDC (pago de tarjetas)</option>
+        <option value="cajita_turbo">🏦 Cajita Turbo</option>
+        <option value="cajita_ahorros_2">🏦 Cajita Ahorros 2</option>
+        <option value="cajita_seguros">🏦 Cajita Seguros</option>
+        <option value="otro">Otro / No afectar saldos</option>
+      </select>
+    </div>
+    <div style="background:var(--green-lt);border-radius:7px;padding:8px 10px;font-size:.76rem;color:var(--green);font-weight:600;margin-bottom:4px">
+      ✓ El monto se sumará a la cuenta seleccionada automáticamente.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmLiquidarDeuda()">Confirmar cobro</button>
+      <button class="btn btn-outline" onclick="document.getElementById('liq-deuda-modal').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 </main>
 </div><!-- /app -->
 
@@ -806,6 +974,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 let nextId = 200;
+let dateRange = { from: null, to: null };  // null = use currentMonth
 
 const state = {
   currentMonth: 5, // Junio
@@ -871,6 +1040,15 @@ const $ = id => document.getElementById(id);
 const fmt = n => '$' + (+n).toLocaleString('es-MX', {minimumFractionDigits:0, maximumFractionDigits:2});
 
 function getMonthTransactions(monthIdx) {
+  // If custom date range is set, use it instead of month
+  if(dateRange.from || dateRange.to) {
+    return state.transactions.filter(t => {
+      if(!t.date) return false;
+      if(dateRange.from && t.date < dateRange.from) return false;
+      if(dateRange.to   && t.date > dateRange.to)   return false;
+      return true;
+    });
+  }
   return state.transactions.filter(t => {
     const d = new Date(t.date + 'T12:00:00');
     return d.getMonth() === monthIdx;
@@ -935,11 +1113,14 @@ function renderAll() {
   renderFlujo();
   renderTransactions();
   renderDeudas();
+  updateDateRangeButton();
   scheduleSync();
   // Sync global month label
-  $('global-month').value = state.currentMonth;
-  $('flujo-month-label').textContent = MONTHS[state.currentMonth] + ' 2025';
-  $('pvr-month-label').textContent   = MONTHS[state.currentMonth] + ' 2025';
+  const monthLabel = (dateRange.from || dateRange.to)
+    ? 'Rango personalizado'
+    : MONTHS[state.currentMonth] + ' 2025';
+  if($('flujo-month-label')) $('flujo-month-label').textContent = monthLabel;
+  if($('pvr-month-label'))   $('pvr-month-label').textContent   = monthLabel;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -975,55 +1156,88 @@ function renderDashboard() {
   $('sb-deuda').textContent        = fmt(deuda);
   $('sb-patrimonio').textContent   = fmt(cajSaldo - deuda);
 
-  // PvR list
-  const allRows = [...p.needs, ...p.savings, ...p.personal];
-  const topCats = allRows.slice(0,6);
-  $('pvr-list').innerHTML = topCats.map(c => {
-    const real = egresoMap[c.id]||0;
-    const pct  = c.bud > 0 ? Math.min(120, Math.round(real/c.bud*100)) : 0;
-    const cls  = pct > 100 ? 'over' : pct > 80 ? 'warn' : 'ok';
-    const lbl  = pct > 100 ? 'Excedido' : pct > 80 ? 'Cerca' : 'OK';
-    return `<div class="budget-row ${cls}">
-      <div style="font-size:.85rem;font-weight:500">${c.name}</div>
+  // ── Resumen por CATEGORÍA (necesidades / ahorro / personal) ──
+  const needsBud = p.needs.reduce((a,c)=>a+c.bud,0);
+  const saveBud  = p.savings.reduce((a,c)=>a+c.bud,0);
+  const persBud  = p.personal.reduce((a,c)=>a+c.bud,0);
+  const needsReal= p.needs.reduce((a,c)=>a+(egresoMap[c.id]||0),0);
+  const saveReal = totalAh;
+  const persReal = p.personal.reduce((a,c)=>a+(egresoMap[c.id]||0),0);
+
+  const summaryCats = [
+    {emoji:'🔵', name:'Necesidades',      bud:needsBud, real:needsReal, color:'#1A3A6B'},
+    {emoji:'🟢', name:'Ahorro',           bud:saveBud,  real:saveReal,  color:'#5A2B82'},
+    {emoji:'🟡', name:'Gastos personales', bud:persBud,  real:persReal,  color:'#C9A84C'},
+  ];
+
+  $('pvr-list').innerHTML = summaryCats.map(c => {
+    const pct = c.bud > 0 ? Math.min(120, Math.round(c.real/c.bud*100)) : 0;
+    const cls = pct > 100 ? 'over' : pct > 80 ? 'warn' : 'ok';
+    const lbl = pct > 100 ? 'Excedido' : pct > 80 ? 'Cerca' : 'OK';
+    return `<div class="budget-row ${cls}" style="grid-template-columns:1fr 100px 100px 80px">
+      <div style="font-size:.92rem;font-weight:600"><span style="color:${c.color}">${c.emoji}</span> ${c.name}</div>
       <div class="budget-num" style="color:rgba(14,15,20,.4)">${fmt(c.bud)}</div>
-      <div class="budget-num">${fmt(real)}</div>
-      <div><span class="status-badge ${cls}">${lbl}</span></div>
-      <div class="budget-bar-wrap"><div class="budget-bar"><div class="budget-bar-fill" style="width:${Math.min(100,pct)}%"></div></div></div>
+      <div class="budget-num" style="font-weight:700;color:${c.color}">${fmt(c.real)}</div>
+      <div><span class="status-badge ${cls}">${pct}% · ${lbl}</span></div>
+      <div class="budget-bar-wrap"><div class="budget-bar"><div class="budget-bar-fill" style="width:${Math.min(100,pct)}%;background:${c.color}"></div></div></div>
     </div>`;
   }).join('');
 
-  // Donut
-  const totalBud = allRows.reduce((a,c)=>a+c.bud,0);
-  const needsReal = p.needs.reduce((a,c)=>a+(egresoMap[c.id]||0),0);
-  const saveReal  = totalAh;
-  const persReal  = p.personal.reduce((a,c)=>a+(egresoMap[c.id]||0),0);
-  const totalSpent = needsReal + saveReal + persReal;
+  // ── Dos donas: presupuesto vs real ──
   const circ = 2 * Math.PI * 48;
-
   function arc(pct) { return Math.round(pct * circ / 100 * 10)/10; }
+
+  // Donut PRESUPUESTADO (sobre ingreso esperado)
+  const needsBudPct = ingresoEsp>0 ? needsBud/ingresoEsp*100 : 0;
+  const saveBudPct  = ingresoEsp>0 ? saveBud /ingresoEsp*100 : 0;
+  const persBudPct  = ingresoEsp>0 ? persBud /ingresoEsp*100 : 0;
+  let offsetB = 0;
+  function setArcB(el, pct) {
+    const a = arc(pct);
+    el.setAttribute('stroke-dasharray', `${a} ${circ}`);
+    el.setAttribute('stroke-dashoffset', -offsetB);
+    offsetB += a;
+  }
+  if($('db-needs')) {
+    setArcB($('db-needs'), needsBudPct);
+    setArcB($('db-save'),  saveBudPct);
+    setArcB($('db-pers'),  persBudPct);
+    const totalBudPct = Math.round(needsBudPct+saveBudPct+persBudPct);
+    $('donut-bud-pct').textContent = totalBudPct + '%';
+    $('chart-bud-legend').innerHTML = [
+      ['#1A3A6B','Necesidades', needsBud, needsBudPct],
+      ['#5A2B82','Ahorro',      saveBud,  saveBudPct],
+      ['#C9A84C','Personal',    persBud,  persBudPct],
+      ['#EDE9E0','Disponible',  Math.max(0,ingresoEsp-needsBud-saveBud-persBud), Math.max(0,100-totalBudPct)],
+    ].map(([col,lbl,amt,pct]) =>
+      `<div class="legend-item"><div class="legend-dot" style="background:${col}"></div>${lbl}<span class="legend-val" style="${col==='#EDE9E0'?'color:var(--ink)':''}">${Math.round(pct)}%</span></div>`
+    ).join('');
+  }
+
+  // Donut REAL (gastado)
+  const totalSpent = needsReal + saveReal + persReal;
   const needsPct = ingresoEsp>0 ? needsReal/ingresoEsp*100 : 0;
-  const savePct  = ingresoEsp>0 ? saveReal/ingresoEsp*100  : 0;
-  const persPct  = ingresoEsp>0 ? persReal/ingresoEsp*100  : 0;
-  const needsArc = arc(needsPct), saveArc = arc(savePct), persArc = arc(persPct);
+  const savePct  = ingresoEsp>0 ? saveReal /ingresoEsp*100 : 0;
+  const persPct  = ingresoEsp>0 ? persReal /ingresoEsp*100 : 0;
   let offset = 0;
-  function setArc(el, a) {
+  function setArc(el, pct) {
+    const a = arc(pct);
     el.setAttribute('stroke-dasharray', `${a} ${circ}`);
     el.setAttribute('stroke-dashoffset', -offset);
     offset += a;
   }
-  setArc($('d-needs'), needsArc);
-  setArc($('d-save'),  saveArc);
-  setArc($('d-pers'),  persArc);
-
+  setArc($('d-needs'), needsPct);
+  setArc($('d-save'),  savePct);
+  setArc($('d-pers'),  persPct);
   const spentPct = ingresoEsp > 0 ? Math.round(totalSpent/ingresoEsp*100) : 0;
   $('donut-pct').textContent = spentPct + '%';
   $('chart-legend').innerHTML = [
-    ['#1A3A6B','Necesidades', Math.round(needsPct)],
-    ['#5A2B82','Ahorro',      Math.round(savePct)],
-    ['#C9A84C','Personal',    Math.round(persPct)],
-    ['#EDE9E0','Disponible',  Math.max(0,100-Math.round(needsPct+savePct+persPct))],
+    ['#1A3A6B','Necesidades', needsPct],
+    ['#5A2B82','Ahorro',      savePct],
+    ['#C9A84C','Personal',    persPct],
+    ['#EDE9E0','Disponible',  Math.max(0,100-needsPct-savePct-persPct)],
   ].map(([col,lbl,pct]) =>
-    `<div class="legend-item"><div class="legend-dot" style="background:${col}"></div>${lbl}<span class="legend-val" style="${col==='#EDE9E0'?'color:var(--ink)':''}">${pct}%</span></div>`
+    `<div class="legend-item"><div class="legend-dot" style="background:${col}"></div>${lbl}<span class="legend-val" style="${col==='#EDE9E0'?'color:var(--ink)':''}">${Math.round(pct)}%</span></div>`
   ).join('');
 }
 
@@ -1296,7 +1510,7 @@ function renderTarjetas() {
   $('tarjetas-list').innerHTML = tdcs.map(c => {
     const active = selectedCardId === c.id;
     return `<div onclick="selectCard('${c.id}')" style="cursor:pointer;border-radius:14px;overflow:hidden;flex:1;min-width:160px;max-width:220px;transition:transform .15s,box-shadow .15s;${active?'transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.18)':''}">
-      <div class="card-item ${c.class}" style="border-radius:14px;${active?'outline:3px solid #fff;outline-offset:-3px':'opacity:.85'}">
+      <div class="card-item" style="border-radius:14px;background:linear-gradient(135deg, ${getCardColor(c)}, ${getCardColor(c)}cc);${active?'outline:3px solid #fff;outline-offset:-3px':'opacity:.85'};color:#fff;padding:16px 18px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden">
         <div class="card-pattern"></div>
         <div class="card-chip"></div>
         <div class="card-info">
@@ -1320,12 +1534,16 @@ function selectCard(id) {
 
 const CARD_COLORS = {bbva:'#004A97', nu:'#820AD1', santander:'#EC0000', banamex:'#005BAB'};
 
+function getCardColor(card) {
+  return card.customColor || CARD_COLORS[card.id] || '#0E0F14';
+}
+
 function renderCardDetail(id) {
   const c = state.cuentas.find(x => x.id === id);
   if(!c) return;
 
   // Header info
-  $('card-detail-chip').style.background = CARD_COLORS[id] || '#333';
+  $('card-detail-chip').style.background = getCardColor(c);
   $('card-detail-name').textContent    = c.name;
   $('card-detail-balance').textContent = fmt(c.saldo);
   const today = new Date();
@@ -1362,6 +1580,148 @@ function openTxModalForCard() {
     setTxType('egreso');
     $('tx-account').value = selectedCardId;
   }, 10);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TARJETAS — gestión personalizada
+// ═══════════════════════════════════════════════════════════════════════════
+const CARD_COLOR_PALETTE = [
+  {hex:'#004A97', name:'Azul BBVA'},
+  {hex:'#820AD1', name:'Morado Nu'},
+  {hex:'#EC0000', name:'Rojo Santander'},
+  {hex:'#005BAB', name:'Azul Banamex'},
+  {hex:'#1A7A50', name:'Verde'},
+  {hex:'#C9A84C', name:'Dorado'},
+  {hex:'#0E0F14', name:'Negro'},
+  {hex:'#6C5CE7', name:'Violeta'},
+  {hex:'#FF6B35', name:'Naranja'},
+  {hex:'#1A7A72', name:'Teal'},
+];
+
+function buildColorPicker(selectedHex) {
+  const picker = $('card-color-picker');
+  if(!picker) return;
+  picker.innerHTML = CARD_COLOR_PALETTE.map(c =>
+    `<button type="button" onclick="selectCardColor('${c.hex}')" title="${c.name}"
+      style="width:32px;height:32px;border-radius:8px;background:${c.hex};border:${selectedHex===c.hex?'3px solid var(--ink)':'2px solid rgba(0,0,0,.1)'};cursor:pointer;padding:0"></button>`
+  ).join('');
+  $('card-color').value = selectedHex;
+}
+
+function selectCardColor(hex) {
+  $('card-color').value = hex;
+  buildColorPicker(hex);
+}
+
+function openCardModal(editId) {
+  if(editId) {
+    const c = state.cuentas.find(x => x.id === editId);
+    if(!c) return;
+    $('card-modal-title').textContent = 'Editar: ' + c.name;
+    $('card-edit-id').value = editId;
+    $('card-name').value    = c.name;
+    $('card-saldo').value   = c.saldo;
+    $('card-corte').value   = c.corte || '';
+    $('card-pago').value    = c.pago || '';
+    buildColorPicker(c.customColor || CARD_COLORS[editId] || '#1A3A6B');
+  } else {
+    $('card-modal-title').textContent = 'Nueva tarjeta de crédito';
+    $('card-edit-id').value = '';
+    $('card-name').value    = '';
+    $('card-saldo').value   = '';
+    $('card-corte').value   = '';
+    $('card-pago').value    = '';
+    buildColorPicker('#1A3A6B');
+  }
+  $('card-modal').style.display = 'flex';
+}
+
+function saveCard() {
+  const editId = $('card-edit-id').value;
+  const name   = $('card-name').value.trim() || 'Sin nombre';
+  const saldo  = parseFloat($('card-saldo').value) || 0;
+  const corte  = parseInt($('card-corte').value) || 1;
+  const pago   = parseInt($('card-pago').value) || 1;
+  const color  = $('card-color').value;
+
+  if(editId) {
+    const c = state.cuentas.find(x => x.id === editId);
+    if(c) {
+      c.name = name;
+      c.saldo = saldo;
+      c.corte = corte;
+      c.pago = pago;
+      c.customColor = color;
+    }
+  } else {
+    // Generate ID from name
+    const id = 'card_' + Date.now();
+    state.cuentas.push({
+      id, name, saldo, corte, pago,
+      type: 'tdc',
+      class: 'custom',
+      customColor: color,
+    });
+  }
+  $('card-modal').style.display = 'none';
+  renderTarjetas();
+  renderDashboard();
+  scheduleSync();
+}
+
+function deleteCardConfirm() {
+  if(!selectedCardId) return;
+  const c = state.cuentas.find(x => x.id === selectedCardId);
+  if(!c) return;
+  if(!confirm(`¿Eliminar la tarjeta "${c.name}"? Esta acción no se puede deshacer.`)) return;
+  state.cuentas = state.cuentas.filter(x => x.id !== selectedCardId);
+  selectedCardId = null;
+  $('card-detail-panel').style.display = 'none';
+  $('card-empty-state').style.display  = 'block';
+  renderTarjetas();
+  renderDashboard();
+  scheduleSync();
+}
+
+// ── Pagar tarjeta ─────────────────────────────────────────────────────────────
+function openPayCardModal() {
+  if(!selectedCardId) return;
+  const c = state.cuentas.find(x => x.id === selectedCardId);
+  if(!c) return;
+  $('pay-card-current').textContent = fmt(c.saldo);
+  $('pay-amount').value = '';
+  $('pay-date').value = new Date().toISOString().split('T')[0];
+  $('pay-card-modal').style.display = 'flex';
+}
+
+function confirmPayCard() {
+  const amount = parseFloat($('pay-amount').value) || 0;
+  if(amount <= 0) { alert('Ingresa un monto mayor a 0'); return; }
+  const source = $('pay-source').value;
+
+  const card = state.cuentas.find(x => x.id === selectedCardId);
+  if(!card) return;
+
+  // Reduce card debt
+  card.saldo = Math.max(0, card.saldo - amount);
+
+  // Reduce source balance
+  if(source === 'efectivo' || source === 'santander_cuenta') {
+    const src = state.cuentas.find(x => x.id === source);
+    if(src) src.saldo = src.saldo - amount;
+  } else if(source === 'cajita_tdc') {
+    const cajTDC = state.cajitas.find(c => c.isTDC) || state.cajitas.find(c => c.name === 'TDC');
+    if(cajTDC) cajTDC.saldo = Math.max(0, cajTDC.saldo - amount);
+  }
+  // "otro" doesn't affect any balance
+
+  $('pay-card-modal').style.display = 'none';
+  renderTarjetas();
+  renderCajitas();
+  renderDashboard();
+  if(selectedCardId) renderCardDetail(selectedCardId);
+  scheduleSync();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1532,15 +1892,38 @@ function renderFlujo() {
     <th>Total</th>
   </tr>`;
 
+  // Group ingresos by description
+  const ingByDesc = {};
+  txs.filter(t => t.type === 'ingreso').forEach(t => {
+    const key = t.desc || 'Sin descripción';
+    if(!ingByDesc[key]) ingByDesc[key] = [0,0,0,0];
+    ingByDesc[key][getWeek(t.date)] += t.amount;
+  });
+  // Group egresos by description
+  const egByDesc = {};
+  txs.filter(t => t.type === 'egreso').forEach(t => {
+    const key = t.desc || 'Sin descripción';
+    if(!egByDesc[key]) egByDesc[key] = [0,0,0,0];
+    egByDesc[key][getWeek(t.date)] += t.amount;
+  });
+
   const rows = [
     {label:'SALDO INICIAL', vals:[saldoInicial,0,0,0], cls:'saldo-row', noTotal:true},
     {label:'── INGRESOS',   vals:null, cls:'section-row'},
-    {label:'Ingresos',      vals:ingPerWeek, cls:''},
-    {label:'── EGRESOS',    vals:null, cls:'section-row'},
-    {label:'Egresos',       vals:egPerWeek,  cls:''},
-    {label:'DIFERENCIA',    vals:diffs,      cls:'total-row', signed:true},
-    {label:'SALDO FINAL',   vals:saldos,     cls:'saldo-row', noTotal:true},
   ];
+  // Add each ingreso concept
+  Object.entries(ingByDesc).forEach(([desc, vals]) => {
+    rows.push({label:'  ' + desc, vals, cls:'detail-row'});
+  });
+  rows.push({label:'TOTAL INGRESOS', vals:ingPerWeek, cls:'total-row'});
+  rows.push({label:'── EGRESOS', vals:null, cls:'section-row'});
+  // Add each egreso concept
+  Object.entries(egByDesc).forEach(([desc, vals]) => {
+    rows.push({label:'  ' + desc, vals, cls:'detail-row'});
+  });
+  rows.push({label:'TOTAL EGRESOS', vals:egPerWeek, cls:'total-row'});
+  rows.push({label:'DIFERENCIA',    vals:diffs,    cls:'total-row', signed:true});
+  rows.push({label:'SALDO FINAL',   vals:saldos,   cls:'saldo-row', noTotal:true});
 
   const bodyEl = $('flujo-body');
   if(bodyEl) bodyEl.innerHTML = rows.map(row => {
@@ -1659,8 +2042,76 @@ function saveDeuda() {
 
 function toggleDeudaStatus(idx) {
   const d = state.deudas[idx];
-  d.status = d.status === 'pendiente' ? 'liquidado' : 'pendiente';
-  renderDeudas(); scheduleSync();
+  if(d.status === 'pendiente') {
+    // Open modal to ask where the money went
+    openLiquidarDeudaModal(idx);
+  } else {
+    // Revert to pendiente — also revert the saldo addition if it was tracked
+    if(d.cobradoEn && d.montoCobrado) {
+      const target = state.cuentas.find(c => c.id === d.cobradoEn);
+      if(target) target.saldo -= d.montoCobrado;
+      const cajTarget = state.cajitas.find(c => (c.isTDC ? 'cajita_tdc' : c.name) === d.cobradoEn);
+      if(cajTarget) cajTarget.saldo -= d.montoCobrado;
+    }
+    d.status = 'pendiente';
+    d.cobradoEn = null;
+    d.montoCobrado = null;
+    renderDeudas();
+    renderDashboard();
+    renderTarjetas();
+    renderCajitas();
+    scheduleSync();
+  }
+}
+
+let liquidarDeudaIdx = null;
+
+function openLiquidarDeudaModal(idx) {
+  liquidarDeudaIdx = idx;
+  const d = state.deudas[idx];
+  $('liq-deuda-info').innerHTML = `
+    <div style="font-size:.75rem;color:rgba(14,15,20,.5);font-weight:600">${d.quien}</div>
+    <div style="font-size:.85rem;font-weight:500;margin:2px 0">${d.concepto}</div>
+    <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--green)">${fmt(d.monto)}</div>
+  `;
+  $('liq-amount').value = d.monto;
+  $('liq-target').value = 'efectivo';
+  $('liq-deuda-modal').style.display = 'flex';
+}
+
+function confirmLiquidarDeuda() {
+  if(liquidarDeudaIdx === null) return;
+  const d = state.deudas[liquidarDeudaIdx];
+  const amount = parseFloat($('liq-amount').value) || 0;
+  const target = $('liq-target').value;
+
+  if(amount <= 0) { alert('Ingresa un monto mayor a 0'); return; }
+
+  // Add amount to target
+  if(target.startsWith('cajita_')) {
+    const cajName = target.replace('cajita_', '');
+    const caj = state.cajitas.find(c => {
+      if(cajName === 'tdc') return c.isTDC || c.name === 'TDC';
+      return c.name.toLowerCase().replace(/\s+/g,'_') === cajName;
+    });
+    if(caj) caj.saldo += amount;
+  } else {
+    const cuenta = state.cuentas.find(c => c.id === target);
+    if(cuenta) cuenta.saldo += amount;
+  }
+
+  d.status = 'liquidado';
+  d.cobradoEn = target;
+  d.montoCobrado = amount;
+  d.fechaCobro = new Date().toISOString().slice(0,10);
+
+  $('liq-deuda-modal').style.display = 'none';
+  liquidarDeudaIdx = null;
+  renderDeudas();
+  renderDashboard();
+  renderTarjetas();
+  renderCajitas();
+  scheduleSync();
 }
 
 function deleteDeuda(idx) {
@@ -1684,6 +2135,20 @@ function setDeudaDeudorFilter(name, el) {
   document.querySelectorAll('#deuda-deudor-filters .tx-filter-btn').forEach(b => b.classList.remove('active'));
   if(el) el.classList.add('active');
   renderDeudas();
+}
+
+function formatTargetName(target) {
+  if(!target) return '';
+  const map = {
+    efectivo: '💵 Efectivo',
+    santander_cuenta: '🏦 Santander',
+    cajita_tdc: '🏦 Cajita TDC',
+    cajita_turbo: '🏦 Cajita Turbo',
+    cajita_ahorros_2: '🏦 Cajita Ahorros 2',
+    cajita_seguros: '🏦 Cajita Seguros',
+    otro: 'Otro',
+  };
+  return map[target] || target;
 }
 
 function renderDeudas() {
@@ -1758,7 +2223,7 @@ function renderDeudas() {
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:.95rem">${d.quien}</span>
-          ${liquidado?'<span style="font-size:.7rem;background:var(--green-lt);color:var(--green);padding:1px 7px;border-radius:8px;font-weight:700">Liquidado</span>':''}
+          ${liquidado?'<span style="font-size:.7rem;background:var(--green-lt);color:var(--green);padding:1px 7px;border-radius:8px;font-weight:700">Liquidado</span>':''}${liquidado && d.cobradoEn ? `<span style="font-size:.68rem;color:var(--green);margin-left:4px">→ ${formatTargetName(d.cobradoEn)}</span>` : ''}
           ${vencido&&!liquidado?'<span style="font-size:.7rem;background:var(--red-lt);color:var(--red);padding:1px 7px;border-radius:8px;font-weight:700">Vencido</span>':''}
         </div>
         <div style="font-size:.85rem;color:rgba(14,15,20,.6);margin-top:2px">${d.concepto}</div>
@@ -2013,6 +2478,91 @@ function scheduleSync() {
 // Alias for backwards compat
 const loadFromSheets = loadFromCloud;
 const pushToSheets   = pushToCloud;
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DATE RANGE FILTER
+// ═══════════════════════════════════════════════════════════════════════════
+function openDateRangeModal() {
+  $('date-from-input').value = dateRange.from || '';
+  $('date-to-input').value   = dateRange.to   || '';
+  $('date-range-modal').style.display = 'flex';
+}
+
+function setDateRangePreset(preset) {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+  const pad = n => String(n).padStart(2,'0');
+  const iso = dt => `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+  let from, to;
+  if(preset === 'thisMonth') {
+    from = iso(new Date(y, m, 1));
+    to   = iso(new Date(y, m+1, 0));
+  } else if(preset === 'lastMonth') {
+    from = iso(new Date(y, m-1, 1));
+    to   = iso(new Date(y, m, 0));
+  } else if(preset === 'last30') {
+    const d30 = new Date(); d30.setDate(d - 30);
+    from = iso(d30);
+    to   = iso(today);
+  } else if(preset === 'thisYear') {
+    from = iso(new Date(y, 0, 1));
+    to   = iso(new Date(y, 11, 31));
+  }
+  $('date-from-input').value = from;
+  $('date-to-input').value   = to;
+}
+
+function applyDateRange() {
+  const from = $('date-from-input').value;
+  const to   = $('date-to-input').value;
+  if(!from && !to) { clearDateRange(); return; }
+  dateRange.from = from || null;
+  dateRange.to   = to   || null;
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+}
+
+function clearDateRange() {
+  dateRange.from = null;
+  dateRange.to   = null;
+  $('date-from-input').value = '';
+  $('date-to-input').value   = '';
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+}
+
+function setMonthQuick(monthIdx) {
+  if(monthIdx === '') return;
+  state.currentMonth = parseInt(monthIdx);
+  // Clear date range so currentMonth takes effect
+  dateRange.from = null;
+  dateRange.to   = null;
+  $('date-from-input').value = '';
+  $('date-to-input').value   = '';
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+}
+
+function updateDateRangeButton() {
+  const btn = $('date-range-btn');
+  if(!btn) return;
+  if(dateRange.from || dateRange.to) {
+    const fmt = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+    const f = dateRange.from ? fmt(dateRange.from) : 'inicio';
+    const t = dateRange.to   ? fmt(dateRange.to)   : 'hoy';
+    btn.innerHTML = `📅 ${f} → ${t}`;
+    btn.style.background = 'var(--gold)';
+    btn.style.color = '#fff';
+  } else {
+    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2025';
+    btn.style.background = 'var(--gold-lt)';
+    btn.style.color = 'var(--ink)';
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT — Cloud as source of truth, localStorage as fallback
