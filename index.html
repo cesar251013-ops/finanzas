@@ -974,6 +974,8 @@
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 let nextId = 200;
 let dateRange = { from: null, to: null };  // null = use currentMonth
+let presupuestosPorMes = {};  // { 0: {needs, savings, personal}, 1: {...}, ... }
+let mesActualPresupuesto = null;  // tracks which month is currently in state.presupuesto
 
 const state = {
   currentMonth: 5, // Junio
@@ -1031,6 +1033,35 @@ const state = {
   editingTxId: null,
   txType: 'ingreso',
 };
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRESUPUESTO POR MES
+// ═══════════════════════════════════════════════════════════════════════════
+function snapshotPresupuesto() {
+  // Save current state.presupuesto to its month slot
+  if(mesActualPresupuesto !== null) {
+    presupuestosPorMes[mesActualPresupuesto] = JSON.parse(JSON.stringify(state.presupuesto));
+  }
+}
+
+function loadPresupuestoMes(monthIdx) {
+  // Save current before switching
+  snapshotPresupuesto();
+  // Load month's presupuesto, or clone from template if missing
+  if(presupuestosPorMes[monthIdx]) {
+    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[monthIdx]));
+  } else {
+    // First time on this month: clone current template and reset 'real' values
+    const clone = JSON.parse(JSON.stringify(state.presupuesto));
+    ['needs','savings','personal'].forEach(sec => {
+      (clone[sec]||[]).forEach(r => r.real = 0);
+    });
+    state.presupuesto = clone;
+    presupuestosPorMes[monthIdx] = JSON.parse(JSON.stringify(clone));
+  }
+  mesActualPresupuesto = monthIdx;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -1504,6 +1535,10 @@ function renderTarjetas() {
   const deudaColor = total >= tdcDisponible ? 'var(--green)' : 'var(--red)';
   const deudaEl = $('total-deuda');
   if(deudaEl) { deudaEl.textContent = fmt(total); deudaEl.style.color = deudaColor; }
+
+  // Update tarjetas count
+  const cntEl = $('tarjetas-count');
+  if(cntEl) cntEl.textContent = tdcs.length;
 
   // Card selector pills — no dates shown
   $('tarjetas-list').innerHTML = tdcs.map(c => {
@@ -2284,10 +2319,13 @@ let   initialLoadDone = false;
 // ── localStorage ─────────────────────────────────────────────────────────────
 function saveToLocal() {
   if(!initialLoadDone) return;  // Don't overwrite local storage during initial load
+  // Snapshot current month's presupuesto into the per-month map
+  snapshotPresupuesto();
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
       transactions:    state.transactions,
       presupuesto:     state.presupuesto,
+      presupuestosPorMes: presupuestosPorMes,
       cuentas:         state.cuentas,
       cajitas:         state.cajitas,
       deudas:          state.deudas,
@@ -2315,6 +2353,14 @@ function loadFromLocal() {
       state.cuentas.forEach(c => {
         if(r.saldosCuentas[c.id] !== undefined) c.saldo = r.saldosCuentas[c.id];
       });
+    }
+    if(r.presupuestosPorMes) {
+      presupuestosPorMes = r.presupuestosPorMes;
+      // Load current month's presupuesto
+      if(presupuestosPorMes[state.currentMonth]) {
+        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
+        mesActualPresupuesto = state.currentMonth;
+      }
     }
     if(ok) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
@@ -2417,6 +2463,14 @@ async function loadFromCloud() {
       });
       changed = true;
     }
+    if(r.presupuestosPorMes) {
+      presupuestosPorMes = r.presupuestosPorMes;
+      if(presupuestosPorMes[state.currentMonth]) {
+        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
+        mesActualPresupuesto = state.currentMonth;
+      }
+      changed = true;
+    }
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
       nextId = Math.max(nextId, maxId + 1);
@@ -2439,11 +2493,13 @@ async function pushToCloud() {
   isSyncing = true;
   setSyncStatus('saving');
   try {
+    snapshotPresupuesto();
     const data = await cloudPost({
       action: 'save',
       state: {
         transactions:    state.transactions.map(t => ({...t, presCat: t.presCat ?? '', note: t.note ?? '', date: t.date || ''})),
         presupuesto:     state.presupuesto,
+        presupuestosPorMes: presupuestosPorMes,
         cuentas:         state.cuentas,
         cajitas:         state.cajitas,
         deudas:          (state.deudas||[]).map(d => ({...d, vence: d.vence ?? '', nota: d.nota ?? ''})),
@@ -2535,7 +2591,10 @@ function clearDateRange() {
 
 function setMonthQuick(monthIdx) {
   if(monthIdx === '') return;
+  // Snapshot current month's presupuesto before switching
+  snapshotPresupuesto();
   state.currentMonth = parseInt(monthIdx);
+  loadPresupuestoMes(state.currentMonth);
   // Clear date range so currentMonth takes effect
   dateRange.from = null;
   dateRange.to   = null;
@@ -2544,6 +2603,7 @@ function setMonthQuick(monthIdx) {
   $('date-range-modal').style.display = 'none';
   updateDateRangeButton();
   renderAll();
+  scheduleSync();
 }
 
 function updateDateRangeButton() {
