@@ -1039,10 +1039,10 @@ const state = {
 // PRESUPUESTO POR MES
 // ═══════════════════════════════════════════════════════════════════════════
 function snapshotPresupuesto() {
-  // Save current state.presupuesto to its month slot
-  if(mesActualPresupuesto !== null) {
-    presupuestosPorMes[mesActualPresupuesto] = JSON.parse(JSON.stringify(state.presupuesto));
-  }
+  // Always save current state.presupuesto to whatever month the user is viewing.
+  // This avoids stale references from mesActualPresupuesto.
+  presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
+  mesActualPresupuesto = state.currentMonth;
 }
 
 function loadPresupuestoMes(monthIdx) {
@@ -2356,11 +2356,14 @@ function loadFromLocal() {
     }
     if(r.presupuestosPorMes) {
       presupuestosPorMes = r.presupuestosPorMes;
-      // Load current month's presupuesto
       if(presupuestosPorMes[state.currentMonth]) {
         state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
-        mesActualPresupuesto = state.currentMonth;
       }
+    }
+    // Always set the current month marker so subsequent edits save correctly
+    mesActualPresupuesto = state.currentMonth;
+    if(!presupuestosPorMes[state.currentMonth]) {
+      presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
     }
     if(ok) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
@@ -2467,9 +2470,13 @@ async function loadFromCloud() {
       presupuestosPorMes = r.presupuestosPorMes;
       if(presupuestosPorMes[state.currentMonth]) {
         state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
-        mesActualPresupuesto = state.currentMonth;
       }
       changed = true;
+    }
+    // Always set the current month marker
+    mesActualPresupuesto = state.currentMonth;
+    if(!presupuestosPorMes[state.currentMonth]) {
+      presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
     }
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
@@ -2591,10 +2598,40 @@ function clearDateRange() {
 
 function setMonthQuick(monthIdx) {
   if(monthIdx === '') return;
-  // Snapshot current month's presupuesto before switching
+  const newMonth = parseInt(monthIdx);
+  if(newMonth === state.currentMonth) {
+    // Same month, just close modal
+    dateRange.from = null;
+    dateRange.to   = null;
+    $('date-from-input').value = '';
+    $('date-to-input').value   = '';
+    $('date-range-modal').style.display = 'none';
+    updateDateRangeButton();
+    renderAll();
+    return;
+  }
+  // 1. Save current month's presupuesto to its slot (uses state.currentMonth)
   snapshotPresupuesto();
-  state.currentMonth = parseInt(monthIdx);
-  loadPresupuestoMes(state.currentMonth);
+  // 2. Cancel any pending cloud push so it doesn't run with wrong month
+  if(typeof syncTimeout !== 'undefined' && syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
+  // 3. Switch to new month
+  state.currentMonth = newMonth;
+  // 4. Load that month's presupuesto (or initialize empty)
+  if(presupuestosPorMes[newMonth]) {
+    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[newMonth]));
+  } else {
+    // First time visiting this month: clone current template, reset 'real' values
+    const clone = JSON.parse(JSON.stringify(state.presupuesto));
+    ['needs','savings','personal'].forEach(sec => {
+      (clone[sec]||[]).forEach(r => r.real = 0);
+    });
+    state.presupuesto = clone;
+    presupuestosPorMes[newMonth] = JSON.parse(JSON.stringify(clone));
+  }
+  mesActualPresupuesto = newMonth;
   // Clear date range so currentMonth takes effect
   dateRange.from = null;
   dateRange.to   = null;
@@ -2640,6 +2677,11 @@ if(WORKER_URL) {
 } else {
   // No cloud configured — use localStorage only
   if(loadFromLocal()) renderAll();
+  // Ensure mesActualPresupuesto is set even when no data loaded
+  if(mesActualPresupuesto === null) {
+    mesActualPresupuesto = state.currentMonth;
+    presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
+  }
   initialLoadDone = true;
   setSyncStatus('offline');
 }
