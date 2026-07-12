@@ -978,7 +978,7 @@ let presupuestosPorMes = {};  // { 0: {needs, savings, personal}, 1: {...}, ... 
 let mesActualPresupuesto = null;  // tracks which month is currently in state.presupuesto
 
 const state = {
-  currentMonth: 5, // Junio
+  currentMonth: new Date().getMonth(), // se actualiza automáticamente al mes actual
 
   ingresoEsperado: { 0:30950,1:30950,2:30950,3:30950,4:30950,5:30950,6:30950,7:30950,8:30950,9:30950,10:30950,11:30950 },
 
