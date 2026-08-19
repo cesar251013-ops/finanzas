@@ -2314,6 +2314,7 @@ const LS_URL_KEY    = 'finanzas_worker_url';      // URL del Worker de Cloudflar
 let   WORKER_URL    = localStorage.getItem(LS_URL_KEY) || '';
 let   syncTimeout   = null;
 let   isSyncing     = false;
+let   lastPushedHash = '';  // avoid pushing identical state twice
 let   initialLoadDone = false;
 
 // ── localStorage ─────────────────────────────────────────────────────────────
@@ -2498,10 +2499,11 @@ async function loadFromCloud() {
 async function pushToCloud() {
   if(!WORKER_URL || isSyncing) return;
   isSyncing = true;
-  setSyncStatus('saving');
+  // Only show 'saving' if it takes more than 1.5s (avoids flicker on fast connections)
+  const savingIndicator = setTimeout(() => setSyncStatus('saving'), 1500);
   try {
     snapshotPresupuesto();
-    const data = await cloudPost({
+    const payload = {
       action: 'save',
       state: {
         transactions:    state.transactions.map(t => ({...t, presCat: t.presCat ?? '', note: t.note ?? '', date: t.date || ''})),
@@ -2514,9 +2516,21 @@ async function pushToCloud() {
         saldoInicialMes: state.saldoInicialMes,
         saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
       }
-    });
+    };
+    // Skip push if nothing changed since last successful push
+    const payloadStr = JSON.stringify(payload);
+    if(payloadStr === lastPushedHash) {
+      clearTimeout(savingIndicator);
+      isSyncing = false;
+      setSyncStatus('ok');
+      return;
+    }
+    const data = await cloudPost(payload);
+    if(data.ok) lastPushedHash = payloadStr;
+    clearTimeout(savingIndicator);
     setSyncStatus(data.ok ? 'ok' : 'error');
   } catch(e) {
+    clearTimeout(savingIndicator);
     setSyncStatus('error');
     console.error('Cloud push failed:', e.message);
   } finally {
@@ -2526,15 +2540,15 @@ async function pushToCloud() {
 
 // ── scheduleSync: localStorage inmediato + nube con debounce ──────────────────
 function scheduleSync() {
-  if(!initialLoadDone) return;  // Don't sync during initial load
+  if(!initialLoadDone) return;
+  // Save to localStorage first (instant, safe)
   saveToLocal();
-  if(!WORKER_URL) {
-    setSyncStatus('local');
-    return;
-  }
+  // Show immediate feedback — data is safe even if cloud takes time
+  setSyncStatus('ok');
+  if(!WORKER_URL) return;
+  // Debounce cloud push to 6 seconds — collects multiple edits into one save
   clearTimeout(syncTimeout);
-  setSyncStatus('saving');
-  syncTimeout = setTimeout(pushToCloud, 3000);
+  syncTimeout = setTimeout(pushToCloud, 6000);
 }
 
 // Alias for backwards compat
