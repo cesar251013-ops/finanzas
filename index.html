@@ -2307,20 +2307,24 @@ document.addEventListener('click', e => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SYNC: localStorage (primario) + Cloudflare Worker → Apps Script (nube)
+// SYNC: localStorage (primario) + Supabase (nube, instantáneo)
 // ═══════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://olgsuorcwzimnfdsxbno.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_c3mfA9gXQnjQXEmJs9yf9A_i3nr2FKh';
+const SUPABASE_TABLE = 'finanzas_estado';
+const SUPABASE_ROW_ID = 'main';
+
 const LS_KEY        = 'finanzas_state_v1';
-const LS_URL_KEY    = 'finanzas_worker_url';      // URL del Worker de Cloudflare
-let   WORKER_URL    = localStorage.getItem(LS_URL_KEY) || '';
+const LS_URL_KEY    = 'finanzas_worker_url';  // legacy, no longer used
+let   WORKER_URL    = SUPABASE_URL;  // for backwards compat with UI
 let   syncTimeout   = null;
 let   isSyncing     = false;
-let   lastPushedHash = '';  // avoid pushing identical state twice
 let   initialLoadDone = false;
+let   lastPushedHash = '';
 
 // ── localStorage ─────────────────────────────────────────────────────────────
 function saveToLocal() {
-  if(!initialLoadDone) return;  // Don't overwrite local storage during initial load
-  // Snapshot current month's presupuesto into the per-month map
+  if(!initialLoadDone) return;
   snapshotPresupuesto();
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
@@ -2361,7 +2365,6 @@ function loadFromLocal() {
         state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
       }
     }
-    // Always set the current month marker so subsequent edits save correctly
     mesActualPresupuesto = state.currentMonth;
     if(!presupuestosPorMes[state.currentMonth]) {
       presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
@@ -2374,7 +2377,7 @@ function loadFromLocal() {
   } catch(e) { return false; }
 }
 
-// ── Status ────────────────────────────────────────────────────────────────────
+// ── Status ───────────────────────────────────────────────────────────────────
 function setSyncStatus(status) {
   const dot   = $('sync-dot');
   const label = $('sync-label');
@@ -2384,75 +2387,71 @@ function setSyncStatus(status) {
     saving:  ['var(--gold)',    'Guardando…'],
     ok:      ['var(--green)',   'Sincronizado ✓'],
     error:   ['var(--red)',     'Error · toca para configurar'],
-    offline: ['#aaa',           'Solo local · toca para conectar'],
+    offline: ['#aaa',           'Solo local'],
     loading: ['var(--blue)',    'Cargando…'],
-    local:   ['#6EC98F',        'Local ✓ · sin nube'],
+    local:   ['#6EC98F',        'Local ✓'],
   };
   const [color, text] = map[status] || map.idle;
   dot.style.background = color;
   label.textContent    = text;
 }
 
+// Legacy UI (kept for compat but Supabase is always on)
 function openSheetsConfig() {
-  $('sheets-url-input').value = WORKER_URL;
-  $('sheets-test-result').innerHTML = '';
-  $('sheets-modal').style.display = 'flex';
+  alert('Esta app ahora usa Supabase (sincronización instantánea). No requiere configuración.');
 }
+function saveSheetsConfig() {}
 
-function saveSheetsConfig() {
-  const url = $('sheets-url-input').value.trim();
-  WORKER_URL = url;
-  localStorage.setItem(LS_URL_KEY, url);
-  $('sheets-modal').style.display = 'none';
-  if(url) { pushToCloud(); loadFromCloud(); }
-  else    setSyncStatus('offline');
-}
-
-// ── HTTP helpers (Worker has CORS — no issues) ────────────────────────────────
-async function cloudGet(action) {
-  const res  = await fetch(`${WORKER_URL}?action=${action}`, { cache: 'no-store' });
-  const text = await res.text();
-  return JSON.parse(text);
-}
-
-async function cloudPost(body) {
-  const res  = await fetch(WORKER_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+// ── Supabase helpers ─────────────────────────────────────────────────────────
+async function supaGet() {
+  const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data`;
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+    },
   });
-  const text = await res.text();
-  return JSON.parse(text);
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  return rows.length > 0 ? rows[0].data : null;
 }
 
-// ── Test ──────────────────────────────────────────────────────────────────────
-async function testSheetsConnection() {
-  const url = $('sheets-url-input').value.trim();
-  const el  = $('sheets-test-result');
-  if(!url) { el.innerHTML = '<span style="color:var(--red)">⚠️ Ingresa la URL del Worker primero</span>'; return; }
-  el.innerHTML = '<span style="color:var(--gold)">⏳ Probando…</span>';
-  const saved = WORKER_URL;
-  WORKER_URL = url;
-  try {
-    const data = await cloudGet('ping');
-    el.innerHTML = data.ok
-      ? '<span style="color:var(--green)">✅ Conectado correctamente</span>'
-      : `<span style="color:var(--red)">❌ ${data.error}</span>`;
-  } catch(e) {
-    el.innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
-  } finally {
-    WORKER_URL = saved;
+async function supaUpsert(data) {
+  const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates',
+    },
+    body: JSON.stringify({
+      id: SUPABASE_ROW_ID,
+      data: data,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if(!res.ok) {
+    const txt = await res.text();
+    throw new Error('HTTP ' + res.status + ': ' + txt);
   }
+  return true;
 }
 
 // ── Load from cloud ───────────────────────────────────────────────────────────
 async function loadFromCloud() {
-  if(!WORKER_URL) return;
   setSyncStatus('loading');
   try {
-    const data = await cloudGet('load');
-    if(!data.ok) { setSyncStatus('error'); return; }
-    const r = data.data;
+    const r = await supaGet();
+    if(!r) {
+      // No existe fila aún, es la primera vez
+      initialLoadDone = true;
+      mesActualPresupuesto = state.currentMonth;
+      presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
+      setSyncStatus('ok');
+      return;
+    }
     let changed = false;
     if(r.transactions && r.transactions.length)       { state.transactions    = r.transactions;    changed = true; }
     if(r.presupuesto  && r.presupuesto.needs?.length) { state.presupuesto     = r.presupuesto;     changed = true; }
@@ -2474,7 +2473,6 @@ async function loadFromCloud() {
       }
       changed = true;
     }
-    // Always set the current month marker
     mesActualPresupuesto = state.currentMonth;
     if(!presupuestosPorMes[state.currentMonth]) {
       presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
@@ -2485,39 +2483,33 @@ async function loadFromCloud() {
       saveToLocal();
       renderAll();
     }
+    initialLoadDone = true;
     setSyncStatus('ok');
   } catch(e) {
-    setSyncStatus('error');
-    console.error('Cloud load failed:', e.message);
+    console.error('Supabase load failed:', e.message);
     initialLoadDone = true;
-    throw e;  // Let init's .catch handle fallback
+    throw e;
   }
-  initialLoadDone = true;
 }
 
 // ── Push to cloud ─────────────────────────────────────────────────────────────
 async function pushToCloud() {
-  if(!WORKER_URL || isSyncing) return;
+  if(isSyncing) return;
   isSyncing = true;
-  // Only show 'saving' if it takes more than 1.5s (avoids flicker on fast connections)
   const savingIndicator = setTimeout(() => setSyncStatus('saving'), 1500);
   try {
     snapshotPresupuesto();
     const payload = {
-      action: 'save',
-      state: {
-        transactions:    state.transactions.map(t => ({...t, presCat: t.presCat ?? '', note: t.note ?? '', date: t.date || ''})),
-        presupuesto:     state.presupuesto,
-        presupuestosPorMes: presupuestosPorMes,
-        cuentas:         state.cuentas,
-        cajitas:         state.cajitas,
-        deudas:          (state.deudas||[]).map(d => ({...d, vence: d.vence ?? '', nota: d.nota ?? ''})),
-        ingresoEsperado: state.ingresoEsperado,
-        saldoInicialMes: state.saldoInicialMes,
-        saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
-      }
+      transactions:    state.transactions.map(t => ({...t, presCat: t.presCat ?? '', note: t.note ?? '', date: t.date || ''})),
+      presupuesto:     state.presupuesto,
+      presupuestosPorMes: presupuestosPorMes,
+      cuentas:         state.cuentas,
+      cajitas:         state.cajitas,
+      deudas:          (state.deudas||[]).map(d => ({...d, vence: d.vence ?? '', nota: d.nota ?? ''})),
+      ingresoEsperado: state.ingresoEsperado,
+      saldoInicialMes: state.saldoInicialMes,
+      saldosCuentas:   Object.fromEntries(state.cuentas.map(c => [c.id, c.saldo])),
     };
-    // Skip push if nothing changed since last successful push
     const payloadStr = JSON.stringify(payload);
     if(payloadStr === lastPushedHash) {
       clearTimeout(savingIndicator);
@@ -2525,180 +2517,51 @@ async function pushToCloud() {
       setSyncStatus('ok');
       return;
     }
-    const data = await cloudPost(payload);
-    if(data.ok) lastPushedHash = payloadStr;
+    await supaUpsert(payload);
+    lastPushedHash = payloadStr;
     clearTimeout(savingIndicator);
-    setSyncStatus(data.ok ? 'ok' : 'error');
+    setSyncStatus('ok');
   } catch(e) {
     clearTimeout(savingIndicator);
     setSyncStatus('error');
-    console.error('Cloud push failed:', e.message);
+    console.error('Supabase push failed:', e.message);
   } finally {
     isSyncing = false;
   }
 }
 
-// ── scheduleSync: localStorage inmediato + nube con debounce ──────────────────
+// ── scheduleSync: localStorage inmediato + cloud rápido ──────────────────────
 function scheduleSync() {
   if(!initialLoadDone) return;
-  // Save to localStorage first (instant, safe)
   saveToLocal();
-  // Show immediate feedback — data is safe even if cloud takes time
   setSyncStatus('ok');
-  if(!WORKER_URL) return;
-  // Debounce cloud push to 6 seconds — collects multiple edits into one save
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(pushToCloud, 6000);
+  // Supabase is fast — only 1.5s debounce
+  syncTimeout = setTimeout(pushToCloud, 1500);
 }
 
-// Alias for backwards compat
+// Legacy aliases
 const loadFromSheets = loadFromCloud;
 const pushToSheets   = pushToCloud;
 
-
 // ═══════════════════════════════════════════════════════════════════════════
-// DATE RANGE FILTER
-// ═══════════════════════════════════════════════════════════════════════════
-function openDateRangeModal() {
-  $('date-from-input').value = dateRange.from || '';
-  $('date-to-input').value   = dateRange.to   || '';
-  $('date-range-modal').style.display = 'flex';
-}
-
-function setDateRangePreset(preset) {
-  const today = new Date();
-  const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
-  const pad = n => String(n).padStart(2,'0');
-  const iso = dt => `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
-  let from, to;
-  if(preset === 'thisMonth') {
-    from = iso(new Date(y, m, 1));
-    to   = iso(new Date(y, m+1, 0));
-  } else if(preset === 'lastMonth') {
-    from = iso(new Date(y, m-1, 1));
-    to   = iso(new Date(y, m, 0));
-  } else if(preset === 'last30') {
-    const d30 = new Date(); d30.setDate(d - 30);
-    from = iso(d30);
-    to   = iso(today);
-  } else if(preset === 'thisYear') {
-    from = iso(new Date(y, 0, 1));
-    to   = iso(new Date(y, 11, 31));
-  }
-  $('date-from-input').value = from;
-  $('date-to-input').value   = to;
-}
-
-function applyDateRange() {
-  const from = $('date-from-input').value;
-  const to   = $('date-to-input').value;
-  if(!from && !to) { clearDateRange(); return; }
-  dateRange.from = from || null;
-  dateRange.to   = to   || null;
-  $('date-range-modal').style.display = 'none';
-  updateDateRangeButton();
-  renderAll();
-}
-
-function clearDateRange() {
-  dateRange.from = null;
-  dateRange.to   = null;
-  $('date-from-input').value = '';
-  $('date-to-input').value   = '';
-  $('date-range-modal').style.display = 'none';
-  updateDateRangeButton();
-  renderAll();
-}
-
-function setMonthQuick(monthIdx) {
-  if(monthIdx === '') return;
-  const newMonth = parseInt(monthIdx);
-  if(newMonth === state.currentMonth) {
-    // Same month, just close modal
-    dateRange.from = null;
-    dateRange.to   = null;
-    $('date-from-input').value = '';
-    $('date-to-input').value   = '';
-    $('date-range-modal').style.display = 'none';
-    updateDateRangeButton();
-    renderAll();
-    return;
-  }
-  // 1. Save current month's presupuesto to its slot (uses state.currentMonth)
-  snapshotPresupuesto();
-  // 2. Cancel any pending cloud push so it doesn't run with wrong month
-  if(typeof syncTimeout !== 'undefined' && syncTimeout) {
-    clearTimeout(syncTimeout);
-    syncTimeout = null;
-  }
-  // 3. Switch to new month
-  state.currentMonth = newMonth;
-  // 4. Load that month's presupuesto (or initialize empty)
-  if(presupuestosPorMes[newMonth]) {
-    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[newMonth]));
-  } else {
-    // First time visiting this month: clone current template, reset 'real' values
-    const clone = JSON.parse(JSON.stringify(state.presupuesto));
-    ['needs','savings','personal'].forEach(sec => {
-      (clone[sec]||[]).forEach(r => r.real = 0);
-    });
-    state.presupuesto = clone;
-    presupuestosPorMes[newMonth] = JSON.parse(JSON.stringify(clone));
-  }
-  mesActualPresupuesto = newMonth;
-  // Clear date range so currentMonth takes effect
-  dateRange.from = null;
-  dateRange.to   = null;
-  $('date-from-input').value = '';
-  $('date-to-input').value   = '';
-  $('date-range-modal').style.display = 'none';
-  updateDateRangeButton();
-  renderAll();
-  scheduleSync();
-}
-
-function updateDateRangeButton() {
-  const btn = $('date-range-btn');
-  if(!btn) return;
-  if(dateRange.from || dateRange.to) {
-    const fmt = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
-    const f = dateRange.from ? fmt(dateRange.from) : 'inicio';
-    const t = dateRange.to   ? fmt(dateRange.to)   : 'hoy';
-    btn.innerHTML = `📅 ${f} → ${t}`;
-    btn.style.background = 'var(--gold)';
-    btn.style.color = '#fff';
-  } else {
-    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2026';
-    btn.style.background = 'var(--gold-lt)';
-    btn.style.color = 'var(--ink)';
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INIT — Cloud as source of truth, localStorage as fallback
+// INIT — Supabase as source of truth, localStorage as fallback
 // ═══════════════════════════════════════════════════════════════════════════
 initialLoadDone = false;
 renderAll();
 
-if(WORKER_URL) {
-  // Cloud is source of truth — try it first
-  loadFromCloud().catch(e => {
-    console.warn('Cloud load failed, using localStorage:', e.message);
-    if(loadFromLocal()) renderAll();
-    initialLoadDone = true;
-    setSyncStatus('local');
-  });
-} else {
-  // No cloud configured — use localStorage only
+loadFromCloud().then(() => {
+  renderAll();
+}).catch(e => {
+  console.warn('Supabase load failed, using localStorage:', e.message);
   if(loadFromLocal()) renderAll();
-  // Ensure mesActualPresupuesto is set even when no data loaded
+  initialLoadDone = true;
   if(mesActualPresupuesto === null) {
     mesActualPresupuesto = state.currentMonth;
     presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
   }
-  initialLoadDone = true;
-  setSyncStatus('offline');
-}
+  setSyncStatus('local');
+});
 
 </script>
 </body>
