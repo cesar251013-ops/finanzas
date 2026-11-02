@@ -2306,6 +2306,118 @@ document.addEventListener('click', e => {
 });
 
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DATE RANGE FILTER
+// ═══════════════════════════════════════════════════════════════════════════
+function openDateRangeModal() {
+  $('date-from-input').value = dateRange.from || '';
+  $('date-to-input').value   = dateRange.to   || '';
+  $('date-range-modal').style.display = 'flex';
+}
+
+function setDateRangePreset(preset) {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+  const pad = n => String(n).padStart(2,'0');
+  const iso = dt => `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+  let from, to;
+  if(preset === 'thisMonth') {
+    from = iso(new Date(y, m, 1));
+    to   = iso(new Date(y, m+1, 0));
+  } else if(preset === 'lastMonth') {
+    from = iso(new Date(y, m-1, 1));
+    to   = iso(new Date(y, m, 0));
+  } else if(preset === 'last30') {
+    const d30 = new Date(); d30.setDate(d - 30);
+    from = iso(d30);
+    to   = iso(today);
+  } else if(preset === 'thisYear') {
+    from = iso(new Date(y, 0, 1));
+    to   = iso(new Date(y, 11, 31));
+  }
+  $('date-from-input').value = from;
+  $('date-to-input').value   = to;
+}
+
+function applyDateRange() {
+  const from = $('date-from-input').value;
+  const to   = $('date-to-input').value;
+  if(!from && !to) { clearDateRange(); return; }
+  dateRange.from = from || null;
+  dateRange.to   = to   || null;
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+}
+
+function clearDateRange() {
+  dateRange.from = null;
+  dateRange.to   = null;
+  $('date-from-input').value = '';
+  $('date-to-input').value   = '';
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+}
+
+function setMonthQuick(monthIdx) {
+  if(monthIdx === '') return;
+  const newMonth = parseInt(monthIdx);
+  if(newMonth === state.currentMonth) {
+    dateRange.from = null;
+    dateRange.to   = null;
+    $('date-from-input').value = '';
+    $('date-to-input').value   = '';
+    $('date-range-modal').style.display = 'none';
+    updateDateRangeButton();
+    renderAll();
+    return;
+  }
+  snapshotPresupuesto();
+  if(typeof syncTimeout !== 'undefined' && syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
+  state.currentMonth = newMonth;
+  if(presupuestosPorMes[newMonth]) {
+    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[newMonth]));
+  } else {
+    const clone = JSON.parse(JSON.stringify(state.presupuesto));
+    ['needs','savings','personal'].forEach(sec => {
+      (clone[sec]||[]).forEach(r => r.real = 0);
+    });
+    state.presupuesto = clone;
+    presupuestosPorMes[newMonth] = JSON.parse(JSON.stringify(clone));
+  }
+  mesActualPresupuesto = newMonth;
+  dateRange.from = null;
+  dateRange.to   = null;
+  $('date-from-input').value = '';
+  $('date-to-input').value   = '';
+  $('date-range-modal').style.display = 'none';
+  updateDateRangeButton();
+  renderAll();
+  scheduleSync();
+}
+
+function updateDateRangeButton() {
+  const btn = $('date-range-btn');
+  if(!btn) return;
+  if(dateRange.from || dateRange.to) {
+    const fmt = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+    const f = dateRange.from ? fmt(dateRange.from) : 'inicio';
+    const t = dateRange.to   ? fmt(dateRange.to)   : 'hoy';
+    btn.innerHTML = `📅 ${f} → ${t}`;
+    btn.style.background = 'var(--gold)';
+    btn.style.color = '#fff';
+  } else {
+    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2026';
+    btn.style.background = 'var(--gold-lt)';
+    btn.style.color = 'var(--ink)';
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SYNC: localStorage (primario) + Supabase (nube, instantáneo)
 // ═══════════════════════════════════════════════════════════════════════════
