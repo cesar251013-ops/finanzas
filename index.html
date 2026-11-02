@@ -1459,16 +1459,18 @@ function renderPresupuesto() {
       const real = egresoMap[row.id]||0;
       const diff = row.bud - real;
       const diffColor = diff >= 0 ? 'var(--green)' : 'var(--red)';
-      html += `<div class="pres-row">
+      const hasTxs = real > 0;
+      html += `<div class="pres-row" ${hasTxs?`style="cursor:pointer" onclick="togglePresDetail(${row.id})"`:''}>
         <input class="pres-name-input" value="${row.name}" title="Click para editar nombre"
-          onchange="updateRowName(${row.id},'${sec.key}',this.value)">
-        <div></div>
+          onchange="updateRowName(${row.id},'${sec.key}',this.value)" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:center;color:rgba(14,15,20,.4);font-size:.7rem">${hasTxs?`<span id="pres-chevron-${row.id}">▶</span>`:''}</div>
         <input type="number" class="pres-input" value="${row.bud}"
-          onchange="updateRow(${row.id},'bud',this.value,'${sec.key}')">
+          onchange="updateRow(${row.id},'bud',this.value,'${sec.key}')" onclick="event.stopPropagation()">
         <div class="pres-input" style="background:var(--green-lt);color:var(--green);font-family:'JetBrains Mono',monospace;font-size:.8px;display:flex;align-items:center;justify-content:flex-end;font-size:.8rem;padding:6px 9px">${fmt(real)}</div>
         <div class="pres-diff" style="color:${diffColor}">${diff>=0?'+':''}${fmt(diff)}</div>
-        <button class="btn-ghost" onclick="delRow(${row.id},'${sec.key}')" title="Eliminar">✕</button>
-      </div>`;
+        <button class="btn-ghost" onclick="event.stopPropagation();delRow(${row.id},'${sec.key}')" title="Eliminar">✕</button>
+      </div>
+      <div id="pres-detail-${row.id}" style="display:none;background:var(--cream);border-radius:6px;margin:2px 0 6px;padding:8px 10px"></div>`;
     });
 
     html += `<div style="padding:6px 0 2px;text-align:right">
@@ -1483,6 +1485,54 @@ function renderPresupuesto() {
   $('pres-total-real').textContent = fmt(totalReal);
   $('pres-total-diff').textContent = (diff>=0?'+':'')+fmt(diff);
   $('pres-total-diff').style.color = diff >= 0 ? '#6EC98F' : '#F07070';
+}
+
+
+function togglePresDetail(id) {
+  const el = document.getElementById('pres-detail-' + id);
+  const chev = document.getElementById('pres-chevron-' + id);
+  if(!el) return;
+  if(el.style.display === 'none') {
+    // Build the list of transactions for this category in the current month/range
+    const m = state.currentMonth;
+    const txs = (dateRange.from || dateRange.to)
+      ? state.transactions.filter(t => {
+          if(!t.date) return false;
+          if(dateRange.from && t.date < dateRange.from) return false;
+          if(dateRange.to   && t.date > dateRange.to)   return false;
+          return t.type === 'egreso' && t.presCat == id;
+        })
+      : state.transactions.filter(t => {
+          if(!t.date) return false;
+          const d = new Date(t.date + 'T12:00:00');
+          return d.getMonth() === m && t.type === 'egreso' && t.presCat == id;
+        });
+    const sorted = txs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    if(sorted.length === 0) {
+      el.innerHTML = '<div style="font-size:.78rem;color:rgba(14,15,20,.5);text-align:center;padding:4px">Sin movimientos este período</div>';
+    } else {
+      const total = sorted.reduce((a,t) => a + (parseFloat(t.amount)||0), 0);
+      el.innerHTML = `
+        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:rgba(14,15,20,.5);margin-bottom:6px;display:flex;justify-content:space-between">
+          <span>${sorted.length} movimiento${sorted.length>1?'s':''}</span>
+          <span style="font-family:'JetBrains Mono',monospace">Total: ${fmt(total)}</span>
+        </div>
+        ${sorted.map(t => `
+          <div style="display:grid;grid-template-columns:70px 1fr 90px 70px;gap:8px;padding:4px 0;border-bottom:1px solid rgba(14,15,20,.06);font-size:.78rem;align-items:center">
+            <div style="color:rgba(14,15,20,.55);font-family:'JetBrains Mono',monospace;font-size:.72rem">${(t.date||'').slice(5)}</div>
+            <div style="color:var(--ink)">${t.desc||'(sin descripción)'}</div>
+            <div style="color:rgba(14,15,20,.5);font-size:.72rem;text-transform:capitalize">${(t.account||'').replace(/_/g,' ')}</div>
+            <div style="text-align:right;font-family:'JetBrains Mono',monospace;color:var(--red);font-weight:600">${fmt(t.amount)}</div>
+          </div>
+        `).join('')}
+      `;
+    }
+    el.style.display = 'block';
+    if(chev) chev.textContent = '▼';
+  } else {
+    el.style.display = 'none';
+    if(chev) chev.textContent = '▶';
+  }
 }
 
 function updateRowName(id, section, val) {
@@ -1733,6 +1783,7 @@ function confirmPayCard() {
   const amount = parseFloat($('pay-amount').value) || 0;
   if(amount <= 0) { alert('Ingresa un monto mayor a 0'); return; }
   const source = $('pay-source').value;
+  const payDate = $('pay-date').value || new Date().toISOString().split('T')[0];
 
   const card = state.cuentas.find(x => x.id === selectedCardId);
   if(!card) return;
@@ -1741,19 +1792,34 @@ function confirmPayCard() {
   card.saldo = Math.max(0, card.saldo - amount);
 
   // Reduce source balance
+  let sourceName = 'Otro';
   if(source === 'efectivo' || source === 'santander_cuenta') {
     const src = state.cuentas.find(x => x.id === source);
-    if(src) src.saldo = src.saldo - amount;
+    if(src) { src.saldo = src.saldo - amount; sourceName = src.name; }
   } else if(source === 'cajita_tdc') {
     const cajTDC = state.cajitas.find(c => c.isTDC) || state.cajitas.find(c => c.name === 'TDC');
-    if(cajTDC) cajTDC.saldo = Math.max(0, cajTDC.saldo - amount);
+    if(cajTDC) { cajTDC.saldo = Math.max(0, cajTDC.saldo - amount); sourceName = 'Cajita TDC'; }
   }
   // "otro" doesn't affect any balance
+
+  // Register the payment as a positive movement on the card
+  const txId = nextId++;
+  state.transactions.unshift({
+    id: txId,
+    date: payDate,
+    desc: `Pago ${card.name} desde ${sourceName}`,
+    type: 'ingreso',
+    amount: amount,
+    account: card.id,
+    presCat: '',
+    note: 'pago-tarjeta',
+  });
 
   $('pay-card-modal').style.display = 'none';
   renderTarjetas();
   renderCajitas();
   renderDashboard();
+  renderTransactions();
   if(selectedCardId) renderCardDetail(selectedCardId);
   scheduleSync();
 }
