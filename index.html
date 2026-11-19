@@ -570,9 +570,9 @@
       <div class="field-group"><div class="field-label">Descripción</div>
         <input type="text" class="field-input" id="tx-desc" placeholder="Ej: Salario, Restaurante..."></div>
       <div class="field-group"><div class="field-label">Monto ($)</div>
-        <input type="number" class="field-input mono" id="tx-amount" placeholder="0.00"></div>
+        <input type="number" class="field-input mono" id="tx-amount" placeholder="0.00" oninput="updateMsiPreview()"></div>
       <div class="field-group"><div class="field-label">Cuenta / Tarjeta</div>
-        <select class="field-input" id="tx-account">
+        <select class="field-input" id="tx-account" onchange="updateMsiFieldVisibility()">
           <option value="efectivo">Efectivo</option>
           <option value="santander_cuenta">Santander (cuenta)</option>
           <option value="bbva">BBVA (TDC)</option>
@@ -586,6 +586,26 @@
         </select></div>
       <div class="field-group"><div class="field-label">Fecha</div>
         <input type="date" class="field-input" id="tx-date"></div>
+      <div class="field-group" id="tx-msi-group" style="display:none">
+        <div style="background:var(--cream);border-radius:8px;padding:10px 12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:600">
+            <input type="checkbox" id="tx-is-msi" onchange="toggleMsiFields()" style="width:16px;height:16px;cursor:pointer">
+            <span>💳 Es compra a Meses Sin Intereses (MSI)</span>
+          </label>
+          <div id="tx-msi-months-container" style="display:none;margin-top:10px">
+            <div class="field-label" style="margin-bottom:4px">¿En cuántos meses?</div>
+            <select class="field-input" id="tx-msi-months" onchange="updateMsiPreview()">
+              <option value="3">3 meses</option>
+              <option value="6">6 meses</option>
+              <option value="9">9 meses</option>
+              <option value="12" selected>12 meses</option>
+              <option value="18">18 meses</option>
+              <option value="24">24 meses</option>
+            </select>
+            <div id="tx-msi-preview" style="font-size:.75rem;color:rgba(14,15,20,.6);margin-top:6px"></div>
+          </div>
+        </div>
+      </div>
       <div class="field-group"><div class="field-label">Nota (opcional)</div>
         <input type="text" class="field-input" id="tx-note" placeholder="Ej: con descuento, cuotas..."></div>
       <div class="modal-actions">
@@ -619,10 +639,14 @@
 <!-- ══ TARJETAS ═══════════════════════════════════════════════════════════ -->
 <div id="tarjetas" class="content">
 
-  <div class="summary-bar cols3" style="margin-bottom:20px">
+  <div class="summary-bar cols3" style="margin-bottom:12px">
     <div class="sb-item"><div class="sb-label">Deuda total</div><div class="sb-value rd" id="total-deuda">$0</div></div>
     <div class="sb-item"><div class="sb-label">Próximo pago</div><div class="sb-value wh" id="proximo-pago-info">—</div></div>
     <div class="sb-item"><div class="sb-label">Tarjetas activas</div><div class="sb-value g" id="tarjetas-count">0</div></div>
+  </div>
+  <div class="summary-bar cols2" id="msi-summary" style="margin-bottom:20px;display:none">
+    <div class="sb-item"><div class="sb-label">MSI pendientes</div><div class="sb-value" id="total-msi" style="color:var(--gold)">$0</div></div>
+    <div class="sb-item"><div class="sb-label">Deuda real a pagar</div><div class="sb-value rd" id="total-deuda-real">$0</div></div>
   </div>
 
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
@@ -653,6 +677,7 @@
       <button class="btn btn-outline btn-sm" onclick="openCardModal(selectedCardId)">✏️ Editar</button>
       <button class="btn-ghost" style="margin-left:auto" onclick="deleteCardConfirm()" title="Eliminar tarjeta">🗑️ Eliminar</button>
     </div>
+    <div id="card-msi-box" style="padding:0 20px;display:none"></div>
     <div style="padding:10px 20px 6px;display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(14,15,20,.4)">Últimos movimientos</span>
     </div>
@@ -844,15 +869,21 @@
         <button class="btn btn-outline btn-xs" onclick="setDateRangePreset('thisYear')">Este año</button>
       </div>
       <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(14,15,20,.4);margin-bottom:6px">Mes específico</div>
-      <select class="field-input" id="date-month-quick" onchange="setMonthQuick(this.value)">
-        <option value="">— Seleccionar mes —</option>
-        <option value="0">Enero 2026</option><option value="1">Febrero 2026</option>
-        <option value="2">Marzo 2026</option><option value="3">Abril 2026</option>
-        <option value="4">Mayo 2026</option><option value="5">Junio 2026</option>
-        <option value="6">Julio 2026</option><option value="7">Agosto 2026</option>
-        <option value="8">Septiembre 2026</option><option value="9">Octubre 2026</option>
-        <option value="10">Noviembre 2026</option><option value="11">Diciembre 2026</option>
-      </select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select class="field-input" id="date-year-quick">
+          <!-- Se llena dinámicamente -->
+        </select>
+        <select class="field-input" id="date-month-quick">
+          <option value="">— Mes —</option>
+          <option value="0">Enero</option><option value="1">Febrero</option>
+          <option value="2">Marzo</option><option value="3">Abril</option>
+          <option value="4">Mayo</option><option value="5">Junio</option>
+          <option value="6">Julio</option><option value="7">Agosto</option>
+          <option value="8">Septiembre</option><option value="9">Octubre</option>
+          <option value="10">Noviembre</option><option value="11">Diciembre</option>
+        </select>
+      </div>
+      <button class="btn btn-outline btn-sm" style="width:100%;margin-top:6px" onclick="applyYearMonth()">Aplicar año y mes</button>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1" onclick="applyDateRange()">Aplicar filtro</button>
@@ -973,7 +1004,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 let nextId = 200;
-let dateRange = { from: null, to: null };  // null = use currentMonth
+let dateRange = { from: null, to: null };  // null = use currentMonth/currentYear
+let currentYear = new Date().getFullYear();  // año activo, se cambia con setMonthQuick
 let presupuestosPorMes = {};  // { 0: {needs, savings, personal}, 1: {...}, ... }
 let mesActualPresupuesto = null;  // tracks which month is currently in state.presupuesto
 
@@ -1080,8 +1112,9 @@ function getMonthTransactions(monthIdx) {
     });
   }
   return state.transactions.filter(t => {
+    if(!t.date) return false;
     const d = new Date(t.date + 'T12:00:00');
-    return d.getMonth() === monthIdx;
+    return d.getMonth() === monthIdx && d.getFullYear() === currentYear;
   });
 }
 
@@ -1091,12 +1124,89 @@ function getMonthIngreso(monthIdx) {
     .reduce((a,t) => a + t.amount, 0);
 }
 
+// Para una transacción MSI, devuelve cuánto se "gastó realmente" en un mes/año específico.
+// - Transacción normal: devuelve el monto si cae en ese mes/año, sino 0
+// - Transacción MSI: devuelve la cuota si ese mes cae dentro del periodo MSI, sino 0
+function getEffectiveEgresoInMonth(tx, year, monthIdx) {
+  if(tx.type !== 'egreso') return 0;
+  if(!tx.date) return 0;
+  const d = new Date(tx.date + 'T12:00:00');
+  if(isNaN(d)) return 0;
+  if(!tx.msi) {
+    // Transacción normal: solo cuenta en su mes exacto
+    return (d.getMonth() === monthIdx && d.getFullYear() === year) ? (tx.amount || 0) : 0;
+  }
+  // Transacción MSI: cuenta la cuota en cada mes del periodo
+  const months = tx.msi.months || 12;
+  const cuota  = tx.msi.cuota || (tx.amount / months);
+  const startD = new Date((tx.msi.startDate || tx.date) + 'T12:00:00');
+  // Target date = primer día del mes objetivo
+  const target = new Date(year, monthIdx, 1);
+  const startMonth = new Date(startD.getFullYear(), startD.getMonth(), 1);
+  const monthsElapsed = (year - startD.getFullYear()) * 12 + (monthIdx - startD.getMonth());
+  if(monthsElapsed < 0 || monthsElapsed >= months) return 0;
+  return cuota;
+}
+
+// Variante para rango de fechas (dateRange activo)
+function getEffectiveEgresoInRange(tx, fromStr, toStr) {
+  if(tx.type !== 'egreso') return 0;
+  if(!tx.date) return 0;
+  if(!tx.msi) {
+    // Normal: solo si la fecha cae dentro del rango
+    if(fromStr && tx.date < fromStr) return 0;
+    if(toStr   && tx.date > toStr)   return 0;
+    return tx.amount || 0;
+  }
+  // MSI: sumar las cuotas de cada mes que caiga dentro del rango
+  const months = tx.msi.months || 12;
+  const cuota  = tx.msi.cuota || (tx.amount / months);
+  const startD = new Date((tx.msi.startDate || tx.date) + 'T12:00:00');
+  let total = 0;
+  for(let i = 0; i < months; i++) {
+    const cuotaDate = new Date(startD.getFullYear(), startD.getMonth() + i, 1);
+    const cuotaIso  = cuotaDate.getFullYear() + '-' + String(cuotaDate.getMonth()+1).padStart(2,'0') + '-01';
+    if(fromStr && cuotaIso < fromStr.slice(0,7) + '-01') continue;
+    if(toStr) {
+      // Comparamos por mes: la cuota cae el día 1 del mes
+      const toMonth = toStr.slice(0,7);
+      const cuotaMonth = cuotaIso.slice(0,7);
+      if(cuotaMonth > toMonth) continue;
+    }
+    total += cuota;
+  }
+  return total;
+}
+
 function getMonthEgresos(monthIdx) {
-  // Returns presupuesto real values based on transactions
-  const txs = getMonthTransactions(monthIdx).filter(t => t.type === 'egreso' && t.presCat !== null);
+  // Returns presupuesto real values based on transactions (MSI contribute only their cuota per month)
   const map = {};
-  txs.forEach(t => { map[t.presCat] = (map[t.presCat]||0) + t.amount; });
+  (state.transactions || []).forEach(t => {
+    if(t.type !== 'egreso') return;
+    if(t.presCat === null || t.presCat === '' || t.presCat === undefined) return;
+    let amt = 0;
+    if(dateRange.from || dateRange.to) {
+      amt = getEffectiveEgresoInRange(t, dateRange.from, dateRange.to);
+    } else {
+      amt = getEffectiveEgresoInMonth(t, currentYear, monthIdx);
+    }
+    if(amt > 0) map[t.presCat] = (map[t.presCat] || 0) + amt;
+  });
   return map;
+}
+
+// Total de egresos del mes (para el dashboard "Gastos totales"), incluye todos incluso los sin presCat
+function getMonthEgresosTotal(monthIdx) {
+  return (state.transactions || []).reduce((a, t) => {
+    if(t.type !== 'egreso') return a;
+    let amt = 0;
+    if(dateRange.from || dateRange.to) {
+      amt = getEffectiveEgresoInRange(t, dateRange.from, dateRange.to);
+    } else {
+      amt = getEffectiveEgresoInMonth(t, currentYear, monthIdx);
+    }
+    return a + amt;
+  }, 0);
 }
 
 function getSaldoCuentas() {
@@ -1281,6 +1391,7 @@ function setTxType(type) {
   $('btn-ingreso').className = 'type-btn' + (type==='ingreso'?' active ingreso':'');
   $('btn-egreso').className  = 'type-btn' + (type==='egreso'?' active egreso':'');
   $('pres-cat-group').style.display = type==='egreso' ? 'flex' : 'none';
+  updateMsiFieldVisibility();
 }
 
 function buildPresCategories() {
@@ -1293,6 +1404,10 @@ function buildPresCategories() {
 function openTxModal(txId) {
   state.editingTxId = txId || null;
   $('tx-pres-cat').innerHTML = buildPresCategories();
+  // Reset MSI
+  if($('tx-is-msi')) $('tx-is-msi').checked = false;
+  if($('tx-msi-months-container')) $('tx-msi-months-container').style.display = 'none';
+  if($('tx-msi-months')) $('tx-msi-months').value = '12';
   if(txId) {
     const tx = state.transactions.find(t=>t.id===txId);
     $('tx-modal-title').textContent = 'Editar movimiento';
@@ -1303,6 +1418,12 @@ function openTxModal(txId) {
     $('tx-date').value   = tx.date;
     $('tx-note').value   = tx.note||'';
     $('tx-pres-cat').value = tx.presCat||'';
+    if(tx.msi && $('tx-is-msi')) {
+      $('tx-is-msi').checked = true;
+      $('tx-msi-months').value = tx.msi.months || 12;
+      $('tx-msi-months-container').style.display = 'block';
+      updateMsiPreview();
+    }
   } else {
     $('tx-modal-title').textContent = 'Nuevo movimiento';
     setTxType('ingreso');
@@ -1310,7 +1431,40 @@ function openTxModal(txId) {
     $('tx-date').value = new Date().toISOString().split('T')[0];
     $('tx-account').value = 'santander_cuenta';
   }
+  updateMsiFieldVisibility();
   $('tx-modal').style.display='flex';
+}
+
+function updateMsiFieldVisibility() {
+  // Solo mostrar MSI si es egreso en TDC
+  const group = $('tx-msi-group');
+  if(!group) return;
+  const acc = $('tx-account').value;
+  const cuenta = state.cuentas.find(c => c.id === acc);
+  const esTDC = cuenta && cuenta.type === 'tdc';
+  const esEgreso = txTypeActive === 'egreso';
+  group.style.display = (esTDC && esEgreso) ? 'block' : 'none';
+  if(!esTDC || !esEgreso) {
+    if($('tx-is-msi')) $('tx-is-msi').checked = false;
+    if($('tx-msi-months-container')) $('tx-msi-months-container').style.display = 'none';
+  }
+}
+
+function toggleMsiFields() {
+  const checked = $('tx-is-msi').checked;
+  $('tx-msi-months-container').style.display = checked ? 'block' : 'none';
+  if(checked) updateMsiPreview();
+}
+
+function updateMsiPreview() {
+  const amount = parseFloat($('tx-amount').value) || 0;
+  const months = parseInt($('tx-msi-months').value) || 12;
+  if(amount <= 0) {
+    $('tx-msi-preview').textContent = '';
+    return;
+  }
+  const cuota = amount / months;
+  $('tx-msi-preview').innerHTML = `Pago mensual: <b>${fmt(cuota)}</b> · Total: ${fmt(amount)} en ${months} meses`;
 }
 
 function closeTxModal() { $('tx-modal').style.display='none'; }
@@ -1320,6 +1474,8 @@ function saveTx() {
   const type   = txTypeActive;
   const acc    = $('tx-account').value;
   const presCat= type==='egreso' ? (parseInt($('tx-pres-cat').value)||null) : null;
+  const isMsi  = $('tx-is-msi') && $('tx-is-msi').checked;
+  const msiMonths = isMsi ? (parseInt($('tx-msi-months').value) || 12) : null;
 
   const tx = {
     id:      state.editingTxId || (++nextId),
@@ -1331,6 +1487,14 @@ function saveTx() {
     presCat,
     note:    $('tx-note').value,
   };
+  if(isMsi && type === 'egreso') {
+    tx.msi = {
+      months:    msiMonths,
+      startDate: $('tx-date').value,
+      cuota:     amount / msiMonths,
+      paid:      0,  // cuántos meses ya cayeron (se calcula en runtime)
+    };
+  }
 
   if(state.editingTxId) {
     const old = state.transactions.find(t=>t.id===state.editingTxId);
@@ -1493,38 +1657,49 @@ function togglePresDetail(id) {
   const chev = document.getElementById('pres-chevron-' + id);
   if(!el) return;
   if(el.style.display === 'none') {
-    // Build the list of transactions for this category in the current month/range
+    // Build the list of effective egresos for this category in current month/range.
+    // A MSI tx shows one row per month it falls in (using the cuota), not the full amount.
     const m = state.currentMonth;
-    const txs = (dateRange.from || dateRange.to)
-      ? state.transactions.filter(t => {
-          if(!t.date) return false;
-          if(dateRange.from && t.date < dateRange.from) return false;
-          if(dateRange.to   && t.date > dateRange.to)   return false;
-          return t.type === 'egreso' && t.presCat == id;
-        })
-      : state.transactions.filter(t => {
-          if(!t.date) return false;
-          const d = new Date(t.date + 'T12:00:00');
-          return d.getMonth() === m && t.type === 'egreso' && t.presCat == id;
-        });
-    const sorted = txs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-    if(sorted.length === 0) {
+    const rows = [];
+    (state.transactions || []).forEach(t => {
+      if(t.type !== 'egreso' || t.presCat != id) return;
+      let amt = 0;
+      if(dateRange.from || dateRange.to) {
+        amt = getEffectiveEgresoInRange(t, dateRange.from, dateRange.to);
+      } else {
+        amt = getEffectiveEgresoInMonth(t, currentYear, m);
+      }
+      if(amt <= 0) return;
+      // Display: for MSI show cuota + badge; for normal, the amount
+      rows.push({
+        date:    t.date,
+        desc:    t.desc,
+        account: t.account,
+        amount:  amt,
+        msi:     t.msi || null,
+      });
+    });
+    rows.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    if(rows.length === 0) {
       el.innerHTML = '<div style="font-size:.78rem;color:rgba(14,15,20,.5);text-align:center;padding:4px">Sin movimientos este período</div>';
     } else {
-      const total = sorted.reduce((a,t) => a + (parseFloat(t.amount)||0), 0);
+      const total = rows.reduce((a,t) => a + (parseFloat(t.amount)||0), 0);
       el.innerHTML = `
         <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:rgba(14,15,20,.5);margin-bottom:6px;display:flex;justify-content:space-between">
-          <span>${sorted.length} movimiento${sorted.length>1?'s':''}</span>
+          <span>${rows.length} movimiento${rows.length>1?'s':''}</span>
           <span style="font-family:'JetBrains Mono',monospace">Total: ${fmt(total)}</span>
         </div>
-        ${sorted.map(t => `
+        ${rows.map(t => {
+          const msiTag = t.msi ? `<span style="display:inline-block;background:var(--gold-lt);color:var(--gold);padding:0 5px;border-radius:5px;font-size:.62rem;font-weight:700;margin-left:4px">MSI ${t.msi.months}m</span>` : '';
+          return `
           <div style="display:grid;grid-template-columns:70px 1fr 90px 70px;gap:8px;padding:4px 0;border-bottom:1px solid rgba(14,15,20,.06);font-size:.78rem;align-items:center">
             <div style="color:rgba(14,15,20,.55);font-family:'JetBrains Mono',monospace;font-size:.72rem">${(t.date||'').slice(5)}</div>
-            <div style="color:var(--ink)">${t.desc||'(sin descripción)'}</div>
+            <div style="color:var(--ink)">${t.desc||'(sin descripción)'}${msiTag}</div>
             <div style="color:rgba(14,15,20,.5);font-size:.72rem;text-transform:capitalize">${(t.account||'').replace(/_/g,' ')}</div>
             <div style="text-align:right;font-family:'JetBrains Mono',monospace;color:var(--red);font-weight:600">${fmt(t.amount)}</div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       `;
     }
     el.style.display = 'block';
@@ -1561,9 +1736,34 @@ function addRow(section) {
 // ═══════════════════════════════════════════════════════════════════════════
 let selectedCardId = null;
 
+// Calcula los MSI pendientes de una tarjeta (lo que queda retenido en cuotas futuras)
+function getMsiPendiente(cardId) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  let pendiente = 0;
+  let cuotasMensuales = 0;
+  (state.transactions||[]).forEach(t => {
+    if(t.account !== cardId) return;
+    if(!t.msi) return;
+    if(t.type !== 'egreso') return;
+    const startDate = new Date((t.msi.startDate || t.date) + 'T00:00:00');
+    if(isNaN(startDate)) return;
+    const months = t.msi.months || 12;
+    const cuota = t.msi.cuota || (t.amount / months);
+    // Cuántos meses ya transcurrieron desde la fecha de compra
+    const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth());
+    const cuotasRestantes = Math.max(0, months - Math.max(0, monthsElapsed));
+    pendiente += cuota * cuotasRestantes;
+    if(cuotasRestantes > 0) cuotasMensuales += cuota;
+  });
+  return { pendiente, cuotasMensuales };
+}
+
 function renderTarjetas() {
   const tdcs = state.cuentas.filter(c => c.type === 'tdc');
   const total = tdcs.reduce((a,c) => a + c.saldo, 0);
+  const msiTotal = tdcs.reduce((a,c) => a + getMsiPendiente(c.id).pendiente, 0);
+  const deudaRealTotal = total - msiTotal;
 
   // Próximo pago
   const today = new Date();
@@ -1589,6 +1789,18 @@ function renderTarjetas() {
   // Update tarjetas count
   const cntEl = $('tarjetas-count');
   if(cntEl) cntEl.textContent = tdcs.length;
+
+  // Update MSI summary
+  const msiSum = $('msi-summary');
+  if(msiSum) {
+    if(msiTotal > 0) {
+      msiSum.style.display = '';
+      if($('total-msi')) $('total-msi').textContent = fmt(msiTotal);
+      if($('total-deuda-real')) $('total-deuda-real').textContent = fmt(deudaRealTotal);
+    } else {
+      msiSum.style.display = 'none';
+    }
+  }
 
   // Card selector pills — no dates shown
   $('tarjetas-list').innerHTML = tdcs.map(c => {
@@ -1636,6 +1848,34 @@ function renderCardDetail(id) {
   const days = Math.ceil((payDate-today)/(1000*60*60*24));
   $('card-detail-meta').textContent = days <= 1 ? '⚠️ Pago mañana — día ' + c.pago : `Próximo pago: día ${c.pago} (en ${days} días)`;
 
+  // MSI breakdown
+  const msi = getMsiPendiente(id);
+  const deudaReal = c.saldo - msi.pendiente;
+  const msiBox = $('card-msi-box');
+  if(msiBox) {
+    if(msi.pendiente > 0) {
+      msiBox.style.display = 'block';
+      msiBox.innerHTML = `
+        <div style="background:var(--cream);border-radius:10px;padding:12px 14px;margin:10px 0">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(14,15,20,.55);margin-bottom:8px">💳 Desglose de deuda</div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:6px 14px;font-size:.85rem">
+            <div style="color:rgba(14,15,20,.6)">Saldo total:</div>
+            <div style="font-family:'JetBrains Mono',monospace;text-align:right">${fmt(c.saldo)}</div>
+            <div style="color:rgba(14,15,20,.6)">MSI pendientes:</div>
+            <div style="font-family:'JetBrains Mono',monospace;text-align:right;color:var(--gold)">− ${fmt(msi.pendiente)}</div>
+            <div style="font-weight:700;color:var(--ink);border-top:1px solid rgba(14,15,20,.1);padding-top:6px">Deuda real a pagar:</div>
+            <div style="font-family:'JetBrains Mono',monospace;text-align:right;font-weight:700;color:var(--red);border-top:1px solid rgba(14,15,20,.1);padding-top:6px">${fmt(deudaReal)}</div>
+          </div>
+          <div style="font-size:.72rem;color:rgba(14,15,20,.5);margin-top:8px;border-top:1px dashed rgba(14,15,20,.1);padding-top:6px">
+            Cuota MSI que cae cada mes: <b style="color:var(--ink)">${fmt(msi.cuotasMensuales)}</b>
+          </div>
+        </div>
+      `;
+    } else {
+      msiBox.style.display = 'none';
+    }
+  }
+
   // Movements for this card
   const txs = [...state.transactions]
     .filter(t => t.account === id)
@@ -1645,16 +1885,26 @@ function renderCardDetail(id) {
   const allCats = [...p.needs,...p.savings,...p.personal];
   const getCatName = id => allCats.find(c=>c.id===id)?.name || '—';
 
+  const todayD = new Date(); todayD.setHours(0,0,0,0);
   $('card-movements-list').innerHTML = txs.length === 0
     ? `<div style="padding:24px;text-align:center;color:rgba(14,15,20,.35);font-size:.85rem">Sin movimientos registrados para esta tarjeta</div>`
-    : txs.map(t => `
+    : txs.map(t => {
+      let msiBadge = '';
+      if(t.msi) {
+        const sd = new Date((t.msi.startDate || t.date) + 'T00:00:00');
+        const elapsed = (todayD.getFullYear() - sd.getFullYear()) * 12 + (todayD.getMonth() - sd.getMonth());
+        const current = Math.min(t.msi.months, Math.max(1, elapsed + 1));
+        msiBadge = `<div style="display:inline-block;background:var(--gold-lt);color:var(--gold);padding:1px 7px;border-radius:8px;font-size:.65rem;font-weight:700;margin-top:2px">MSI ${current}/${t.msi.months} · ${fmt(t.msi.cuota)}/mes</div>`;
+      }
+      return `
       <div class="tx-row" style="grid-template-columns:70px 1fr 110px 100px 28px">
         <div class="tx-date">${t.date.slice(5)}</div>
-        <div><div class="tx-desc">${t.desc}</div>${t.note?`<div style="font-size:.7rem;color:rgba(14,15,20,.3)">${t.note}</div>`:''}</div>
+        <div><div class="tx-desc">${t.desc}</div>${t.note?`<div style="font-size:.7rem;color:rgba(14,15,20,.3)">${t.note}</div>`:''}${msiBadge}</div>
         <div class="tx-cat">${t.presCat ? getCatName(t.presCat) : '—'}</div>
         <div class="tx-amount ${t.type==='ingreso'?'pos':'neg'}" style="text-align:right">${t.type==='ingreso'?'+':'−'}${fmt(t.amount)}</div>
         <button class="btn-ghost" onclick="deleteTx(${t.id})" title="Eliminar">✕</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 }
 
 function openTxModalForCard() {
@@ -1965,7 +2215,25 @@ function renderFlujo() {
   txs.forEach(t => {
     const w = getWeek(t.date);
     if(t.type === 'ingreso') ingPerWeek[w] += t.amount;
-    else egPerWeek[w] += t.amount;
+    else if(t.type === 'egreso' && !t.msi) egPerWeek[w] += t.amount;
+    else if(t.type === 'egreso' && t.msi) {
+      // Compra MSI hecha este mes: contar solo la cuota (no el total) en la semana de la compra
+      const cuota = t.msi.cuota || (t.amount / (t.msi.months || 12));
+      egPerWeek[w] += cuota;
+    }
+  });
+  // Agregar cuotas de MSI de meses anteriores que todavía caen este mes
+  (state.transactions || []).forEach(t => {
+    if(t.type !== 'egreso' || !t.msi) return;
+    const sd = new Date((t.msi.startDate || t.date) + 'T12:00:00');
+    // Si la compra fue en este mes, ya se contó arriba
+    if(sd.getMonth() === m && sd.getFullYear() === currentYear) return;
+    // Verificar si esta cuota cae en el mes actual
+    const monthsElapsed = (currentYear - sd.getFullYear()) * 12 + (m - sd.getMonth());
+    if(monthsElapsed <= 0 || monthsElapsed >= (t.msi.months || 12)) return;
+    const cuota = t.msi.cuota || (t.amount / (t.msi.months || 12));
+    // Cae el día de corte (asumimos semana 1)
+    egPerWeek[0] += cuota;
   });
 
   const diffs  = ingPerWeek.map((v,i) => v - egPerWeek[i]);
@@ -1999,12 +2267,32 @@ function renderFlujo() {
     if(!ingByDesc[key]) ingByDesc[key] = [0,0,0,0];
     ingByDesc[key][getWeek(t.date)] += t.amount;
   });
-  // Group egresos by description
+  // Group egresos by description (MSI uses cuota, not full amount)
   const egByDesc = {};
   txs.filter(t => t.type === 'egreso').forEach(t => {
-    const key = t.desc || 'Sin descripción';
+    if(t.msi) {
+      const cuota = t.msi.cuota || (t.amount / (t.msi.months || 12));
+      const key = (t.desc || 'Sin descripción') + ` [MSI ${t.msi.months}m · cuota]`;
+      if(!egByDesc[key]) egByDesc[key] = [0,0,0,0];
+      egByDesc[key][getWeek(t.date)] += cuota;
+    } else {
+      const key = t.desc || 'Sin descripción';
+      if(!egByDesc[key]) egByDesc[key] = [0,0,0,0];
+      egByDesc[key][getWeek(t.date)] += t.amount;
+    }
+  });
+  // Agregar cuotas MSI de meses anteriores
+  (state.transactions || []).forEach(t => {
+    if(t.type !== 'egreso' || !t.msi) return;
+    const sd = new Date((t.msi.startDate || t.date) + 'T12:00:00');
+    if(sd.getMonth() === m && sd.getFullYear() === currentYear) return;
+    const monthsElapsed = (currentYear - sd.getFullYear()) * 12 + (m - sd.getMonth());
+    if(monthsElapsed <= 0 || monthsElapsed >= (t.msi.months || 12)) return;
+    const cuota = t.msi.cuota || (t.amount / (t.msi.months || 12));
+    const current = monthsElapsed + 1;
+    const key = (t.desc || 'Sin descripción') + ` [MSI ${current}/${t.msi.months}]`;
     if(!egByDesc[key]) egByDesc[key] = [0,0,0,0];
-    egByDesc[key][getWeek(t.date)] += t.amount;
+    egByDesc[key][0] += cuota;
   });
 
   const rows = [
@@ -2379,6 +2667,8 @@ document.addEventListener('click', e => {
 function openDateRangeModal() {
   $('date-from-input').value = dateRange.from || '';
   $('date-to-input').value   = dateRange.to   || '';
+  populateYearSelector();
+  if($('date-month-quick')) $('date-month-quick').value = state.currentMonth;
   $('date-range-modal').style.display = 'flex';
 }
 
@@ -2427,10 +2717,37 @@ function clearDateRange() {
   renderAll();
 }
 
-function setMonthQuick(monthIdx) {
+function applyYearMonth() {
+  const y = parseInt($('date-year-quick').value) || new Date().getFullYear();
+  const m = $('date-month-quick').value;
+  if(m === '') return;
+  setMonthQuick(m, y);
+}
+
+function populateYearSelector() {
+  const sel = $('date-year-quick');
+  if(!sel) return;
+  const years = new Set();
+  // Años disponibles basados en transacciones + año actual +/- 1
+  const now = new Date().getFullYear();
+  years.add(now - 1);
+  years.add(now);
+  years.add(now + 1);
+  (state.transactions||[]).forEach(t => {
+    if(t.date) {
+      const y = parseInt(t.date.slice(0,4));
+      if(!isNaN(y)) years.add(y);
+    }
+  });
+  const sorted = [...years].sort((a,b) => b - a);
+  sel.innerHTML = sorted.map(y => `<option value="${y}" ${y===currentYear?'selected':''}>${y}</option>`).join('');
+}
+
+function setMonthQuick(monthIdx, yearParam) {
   if(monthIdx === '') return;
   const newMonth = parseInt(monthIdx);
-  if(newMonth === state.currentMonth) {
+  const newYear = yearParam ? parseInt(yearParam) : currentYear;
+  if(newMonth === state.currentMonth && newYear === currentYear) {
     dateRange.from = null;
     dateRange.to   = null;
     $('date-from-input').value = '';
@@ -2446,17 +2763,22 @@ function setMonthQuick(monthIdx) {
     syncTimeout = null;
   }
   state.currentMonth = newMonth;
-  if(presupuestosPorMes[newMonth]) {
+  currentYear = newYear;
+  const key = `${newYear}-${newMonth}`;
+  if(presupuestosPorMes[key]) {
+    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[key]));
+  } else if(presupuestosPorMes[newMonth] && newYear === new Date().getFullYear()) {
     state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[newMonth]));
+    presupuestosPorMes[key] = JSON.parse(JSON.stringify(state.presupuesto));
   } else {
     const clone = JSON.parse(JSON.stringify(state.presupuesto));
     ['needs','savings','personal'].forEach(sec => {
       (clone[sec]||[]).forEach(r => r.real = 0);
     });
     state.presupuesto = clone;
-    presupuestosPorMes[newMonth] = JSON.parse(JSON.stringify(clone));
+    presupuestosPorMes[key] = JSON.parse(JSON.stringify(clone));
   }
-  mesActualPresupuesto = newMonth;
+  mesActualPresupuesto = key;
   dateRange.from = null;
   dateRange.to   = null;
   $('date-from-input').value = '';
@@ -2471,14 +2793,14 @@ function updateDateRangeButton() {
   const btn = $('date-range-btn');
   if(!btn) return;
   if(dateRange.from || dateRange.to) {
-    const fmt = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+    const fmt = d => d ? d.slice(8,10) + '/' + d.slice(5,7) + '/' + d.slice(2,4) : '';
     const f = dateRange.from ? fmt(dateRange.from) : 'inicio';
     const t = dateRange.to   ? fmt(dateRange.to)   : 'hoy';
     btn.innerHTML = `📅 ${f} → ${t}`;
     btn.style.background = 'var(--gold)';
     btn.style.color = '#fff';
   } else {
-    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' 2026';
+    btn.innerHTML = '📅 ' + MONTHS[state.currentMonth] + ' ' + currentYear;
     btn.style.background = 'var(--gold-lt)';
     btn.style.color = 'var(--ink)';
   }
