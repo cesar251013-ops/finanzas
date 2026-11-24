@@ -1068,31 +1068,54 @@ const state = {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESUPUESTO POR MES
+// PRESUPUESTO POR MES — SIEMPRE con clave "año-mes"
 // ═══════════════════════════════════════════════════════════════════════════
-function snapshotPresupuesto() {
-  // Always save current state.presupuesto to whatever month the user is viewing.
-  // This avoids stale references from mesActualPresupuesto.
-  presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
-  mesActualPresupuesto = state.currentMonth;
+function presupuestoKey(year, month) {
+  return `${year}-${month}`;
 }
 
-function loadPresupuestoMes(monthIdx) {
-  // Save current before switching
+// Migra las claves viejas (solo número) al formato año-mes del año actual.
+// Se ejecuta una vez al cargar los datos.
+function migrarClavesPresupuesto() {
+  if(!presupuestosPorMes) return;
+  const añoActual = new Date().getFullYear();
+  Object.keys(presupuestosPorMes).forEach(k => {
+    // Clave vieja: solo número (0-11)
+    if(/^\d+$/.test(k) && parseInt(k) >= 0 && parseInt(k) <= 11) {
+      const nuevaKey = presupuestoKey(añoActual, parseInt(k));
+      if(!presupuestosPorMes[nuevaKey]) {
+        // Migrar
+        presupuestosPorMes[nuevaKey] = presupuestosPorMes[k];
+      }
+      // Eliminar la clave vieja
+      delete presupuestosPorMes[k];
+    }
+  });
+}
+
+function snapshotPresupuesto() {
+  // Siempre guarda bajo la clave año-mes actual
+  const key = presupuestoKey(currentYear, state.currentMonth);
+  presupuestosPorMes[key] = JSON.parse(JSON.stringify(state.presupuesto));
+  mesActualPresupuesto = key;
+}
+
+function loadPresupuestoMes(monthIdx, yearParam) {
   snapshotPresupuesto();
-  // Load month's presupuesto, or clone from template if missing
-  if(presupuestosPorMes[monthIdx]) {
-    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[monthIdx]));
+  const year = yearParam || currentYear;
+  const key = presupuestoKey(year, monthIdx);
+  if(presupuestosPorMes[key]) {
+    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[key]));
   } else {
-    // First time on this month: clone current template and reset 'real' values
+    // Primera vez en este mes: clonar plantilla y resetear 'real'
     const clone = JSON.parse(JSON.stringify(state.presupuesto));
     ['needs','savings','personal'].forEach(sec => {
       (clone[sec]||[]).forEach(r => r.real = 0);
     });
     state.presupuesto = clone;
-    presupuestosPorMes[monthIdx] = JSON.parse(JSON.stringify(clone));
+    presupuestosPorMes[key] = JSON.parse(JSON.stringify(clone));
   }
-  mesActualPresupuesto = monthIdx;
+  mesActualPresupuesto = key;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2757,20 +2780,21 @@ function setMonthQuick(monthIdx, yearParam) {
     renderAll();
     return;
   }
+  // 1. Snapshot del mes actual ANTES de cambiar
   snapshotPresupuesto();
+  // 2. Cancelar sincronización pendiente para que no se guarde con el mes nuevo
   if(typeof syncTimeout !== 'undefined' && syncTimeout) {
     clearTimeout(syncTimeout);
     syncTimeout = null;
   }
+  // 3. Cambiar al mes/año nuevo
   state.currentMonth = newMonth;
   currentYear = newYear;
-  const key = `${newYear}-${newMonth}`;
+  const key = presupuestoKey(newYear, newMonth);
   if(presupuestosPorMes[key]) {
     state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[key]));
-  } else if(presupuestosPorMes[newMonth] && newYear === new Date().getFullYear()) {
-    state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[newMonth]));
-    presupuestosPorMes[key] = JSON.parse(JSON.stringify(state.presupuesto));
   } else {
+    // Primera vez en este mes: clonar plantilla y resetear 'real'
     const clone = JSON.parse(JSON.stringify(state.presupuesto));
     ['needs','savings','personal'].forEach(sec => {
       (clone[sec]||[]).forEach(r => r.real = 0);
@@ -2861,13 +2885,18 @@ function loadFromLocal() {
     }
     if(r.presupuestosPorMes) {
       presupuestosPorMes = r.presupuestosPorMes;
-      if(presupuestosPorMes[state.currentMonth]) {
-        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
+      migrarClavesPresupuesto();
+      const key = presupuestoKey(currentYear, state.currentMonth);
+      if(presupuestosPorMes[key]) {
+        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[key]));
       }
-    }
-    mesActualPresupuesto = state.currentMonth;
-    if(!presupuestosPorMes[state.currentMonth]) {
-      presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
+      mesActualPresupuesto = key;
+    } else {
+      const key = presupuestoKey(currentYear, state.currentMonth);
+      mesActualPresupuesto = key;
+      if(!presupuestosPorMes[key]) {
+        presupuestosPorMes[key] = JSON.parse(JSON.stringify(state.presupuesto));
+      }
     }
     if(ok) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
@@ -2968,14 +2997,19 @@ async function loadFromCloud() {
     }
     if(r.presupuestosPorMes) {
       presupuestosPorMes = r.presupuestosPorMes;
-      if(presupuestosPorMes[state.currentMonth]) {
-        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[state.currentMonth]));
+      migrarClavesPresupuesto();
+      const key = presupuestoKey(currentYear, state.currentMonth);
+      if(presupuestosPorMes[key]) {
+        state.presupuesto = JSON.parse(JSON.stringify(presupuestosPorMes[key]));
       }
+      mesActualPresupuesto = key;
       changed = true;
-    }
-    mesActualPresupuesto = state.currentMonth;
-    if(!presupuestosPorMes[state.currentMonth]) {
-      presupuestosPorMes[state.currentMonth] = JSON.parse(JSON.stringify(state.presupuesto));
+    } else {
+      const key = presupuestoKey(currentYear, state.currentMonth);
+      mesActualPresupuesto = key;
+      if(!presupuestosPorMes[key]) {
+        presupuestosPorMes[key] = JSON.parse(JSON.stringify(state.presupuesto));
+      }
     }
     if(changed) {
       const maxId = Math.max(0, ...state.transactions.map(t => +t.id||0));
