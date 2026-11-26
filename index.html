@@ -2912,17 +2912,21 @@ function setSyncStatus(status) {
   const label = $('sync-label');
   if(!dot || !label) return;
   const map = {
-    idle:    ['#ccc',           'Sin configurar'],
-    saving:  ['var(--gold)',    'Guardando…'],
-    ok:      ['var(--green)',   'Sincronizado ✓'],
-    error:   ['var(--red)',     'Error · toca para configurar'],
-    offline: ['#aaa',           'Solo local'],
-    loading: ['var(--blue)',    'Cargando…'],
-    local:   ['#6EC98F',        'Local ✓'],
+    idle:     ['#ccc',           'Sin configurar'],
+    pending:  ['var(--gold)',    'Cambios pendientes…'],
+    saving:   ['var(--gold)',    'Guardando en la nube…'],
+    retrying: ['var(--gold)',    'Reintentando…'],
+    ok:       ['var(--green)',   'Sincronizado ✓'],
+    error:    ['var(--red)',     '⚠ Error · NO cierres la app'],
+    offline:  ['#aaa',           'Solo local'],
+    loading:  ['var(--blue)',    'Cargando…'],
+    local:    ['#6EC98F',        'Local ✓'],
   };
   const [color, text] = map[status] || map.idle;
   dot.style.background = color;
   label.textContent    = text;
+  // Si hay error, dar al indicador una animación sutil para que el usuario note
+  label.style.fontWeight = (status === 'error') ? '700' : '600';
 }
 
 // Legacy UI (kept for compat but Supabase is always on)
@@ -3027,10 +3031,13 @@ async function loadFromCloud() {
 }
 
 // ── Push to cloud ─────────────────────────────────────────────────────────────
-async function pushToCloud() {
+let pushRetryCount = 0;
+let hasPendingChanges = false;  // true = hay cambios en localStorage que aún no suben a Supabase
+
+async function pushToCloud(isRetry) {
   if(isSyncing) return;
   isSyncing = true;
-  const savingIndicator = setTimeout(() => setSyncStatus('saving'), 1500);
+  setSyncStatus('saving');
   try {
     snapshotPresupuesto();
     const payload = {
@@ -3046,33 +3053,71 @@ async function pushToCloud() {
     };
     const payloadStr = JSON.stringify(payload);
     if(payloadStr === lastPushedHash) {
-      clearTimeout(savingIndicator);
       isSyncing = false;
+      hasPendingChanges = false;
       setSyncStatus('ok');
       return;
     }
     await supaUpsert(payload);
+    // ✅ Solo ahora que Supabase confirmó, marcamos como sincronizado
     lastPushedHash = payloadStr;
-    clearTimeout(savingIndicator);
+    hasPendingChanges = false;
+    pushRetryCount = 0;
     setSyncStatus('ok');
   } catch(e) {
-    clearTimeout(savingIndicator);
-    setSyncStatus('error');
     console.error('Supabase push failed:', e.message);
+    hasPendingChanges = true;
+    // Reintentar hasta 3 veces con delay exponencial
+    if(pushRetryCount < 3) {
+      pushRetryCount++;
+      setSyncStatus('retrying');
+      setTimeout(() => {
+        isSyncing = false;
+        pushToCloud(true);
+      }, 2000 * pushRetryCount);
+      return;
+    }
+    setSyncStatus('error');
+    pushRetryCount = 0;
   } finally {
     isSyncing = false;
   }
 }
 
-// ── scheduleSync: localStorage inmediato + cloud rápido ──────────────────────
+// ── scheduleSync: guarda local Y espera confirmación de cloud ────────────────
 function scheduleSync() {
   if(!initialLoadDone) return;
   saveToLocal();
-  setSyncStatus('ok');
+  hasPendingChanges = true;  // Marcamos que hay cambios pendientes
+  setSyncStatus('pending');  // Muestra "Guardando..." hasta que Supabase confirme
   clearTimeout(syncTimeout);
-  // Supabase is fast — only 1.5s debounce
-  syncTimeout = setTimeout(pushToCloud, 1500);
+  syncTimeout = setTimeout(() => pushToCloud(false), 1500);
 }
+
+// ── Advertencia si el usuario cierra la pestaña con cambios pendientes ───────
+window.addEventListener('beforeunload', function(e) {
+  if(hasPendingChanges || isSyncing) {
+    e.preventDefault();
+    e.returnValue = 'Hay cambios que aún no se han guardado en la nube. ¿Seguro que quieres salir?';
+    return e.returnValue;
+  }
+});
+
+// ── Verificar sincronización pendiente cuando la ventana vuelve a tener foco ─
+window.addEventListener('focus', function() {
+  if(hasPendingChanges && !isSyncing && initialLoadDone) {
+    // Reintentar push si hay cambios pendientes
+    pushToCloud(false);
+  }
+});
+
+// ── Cuando el navegador recupera conexión, reintentar ────────────────────────
+window.addEventListener('online', function() {
+  if(hasPendingChanges && !isSyncing && initialLoadDone) {
+    pushRetryCount = 0;  // Reset del contador porque es un trigger nuevo
+    pushToCloud(false);
+  }
+});
 
 // Legacy aliases
 const loadFromSheets = loadFromCloud;
